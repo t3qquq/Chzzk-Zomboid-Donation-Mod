@@ -90,7 +90,7 @@ _a.b = function(a)
         -- Load explosion sprite frames.
         local frames = {}
         for h = 1, 17 do
-            frames[h] = getTexture(string.format("media/textures/textures/FX/explobig/%03d.png", h))
+            frames[h] = getTexture(string.format("media/textures/FX/explobig/%03d.png", h))
         end
         DOTex.speed = 0
         DOTex.tex   = frames[1]
@@ -207,7 +207,7 @@ Events.OnServerCommand.Add(function(a, b, c)
             end
             local frames = {}
             for h = 1, 17 do
-                frames[h] = getTexture(string.format("media/textures/textures/FX/explobig/%03d.png", h))
+                frames[h] = getTexture(string.format("media/textures/FX/explobig/%03d.png", h))
             end
             DOTex.speed = 0
             DOTex.tex   = frames[1]
