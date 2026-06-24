@@ -8,7 +8,7 @@ local _d  -- bomb tick handler reference
 DOTex = DOTex or {}
 DOTex.tex = nil
 DOTex.alpha = 0
-DOTex.speed = 0.05
+DOTex.speed = 0.018
 DOTex.screenWidth  = getCore():getScreenWidth()
 DOTex.screenHeight = getCore():getScreenHeight()
 
@@ -87,30 +87,10 @@ _a.b = function(a)
     local function triggerExplosion()
         local e = a:getX()
         local f = a:getY()
-        -- Load explosion sprite frames.
-        local frames = {}
-        for h = 1, 17 do
-            frames[h] = getTexture(string.format("media/textures/FX/explobig/%03d.png", h))
-        end
-        DOTex.speed = 0
-        DOTex.tex   = frames[1]
-        DOTex.alpha = 1
-        local frameIdx, frameDelay = 1, 0
-        local function advanceFrame()
-            frameDelay = frameDelay + 1
-            if frameDelay >= 3 then
-                frameDelay = 0
-                frameIdx   = frameIdx + 1
-                if frameIdx > #frames then
-                    Events.OnTick.Remove(advanceFrame)
-                    DOTex.alpha = 0
-                    DOTex.speed = 0.018
-                else
-                    DOTex.tex = frames[frameIdx]
-                end
-            end
-        end
-        Events.OnTick.Add(advanceFrame)
+
+        DOTex.tex   = getTexture("media/textures/mask_white.png") -- 원하는 텍스처
+        DOTex.alpha = 2
+        getSoundManager():PlaySound("day_one_kaboom", false, 1.0)
 
         local radius = 55
         local payload = {}
@@ -193,11 +173,12 @@ end
 Events.OnServerCommand.Add(function(a, b, c)
     if a == "Schedule" then
         if b == "PlayExplosion" then
-            getSoundManager():PlaySound("explosion", false, 1.0)
+            -- 여기서는 사운드 제거 (예고음은 이미 타이머 480틱 조건에서 재생됨)
         elseif b == "PlayAlert" then
+            -- 발동 시 알람은 그대로 유지
             getSoundManager():PlaySound("alert", false, 1.0)
         elseif b == "NearbyExplosion" then
-            getSoundManager():PlaySound("explosion", false, 1.0)
+            -- 근처 폭발 시 섬광 이펙트만 적용, 사운드는 제거
             local _p = getPlayer()
             if _p then
                 local _bd = _p:getBodyDamage()
@@ -205,30 +186,12 @@ Events.OnServerCommand.Add(function(a, b, c)
                 _p:setBumpFall(true)
                 _p:setBumpType("stagger")
             end
-            local frames = {}
-            for h = 1, 17 do
-                frames[h] = getTexture(string.format("media/textures/FX/explobig/%03d.png", h))
-            end
-            DOTex.speed = 0
-            DOTex.tex   = frames[1]
-            DOTex.alpha = 1
-            local frameIdx, frameDelay = 1, 0
-            local function advanceFrame()
-                frameDelay = frameDelay + 1
-                if frameDelay >= 3 then
-                    frameDelay = 0
-                    frameIdx   = frameIdx + 1
-                    if frameIdx > #frames then
-                        Events.OnTick.Remove(advanceFrame)
-                        DOTex.alpha = 0
-                        DOTex.speed = 0.018
-                    else
-                        DOTex.tex = frames[frameIdx]
-                    end
-                end
-            end
-            Events.OnTick.Add(advanceFrame)
+
+            DOTex.tex   = getTexture("media/textures/mask_white.png")
+            DOTex.alpha = 2
+            -- 사운드 제거, 실제 폭발은 triggerExplosion()에서만 day_one_kaboom 재생
         end
     end
 end)
+
 return _a
