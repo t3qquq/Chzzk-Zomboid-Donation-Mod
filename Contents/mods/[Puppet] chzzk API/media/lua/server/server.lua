@@ -113,7 +113,11 @@ DOServer["Schedule"]["Kaboom"] = function(player, data)
                         if floor == 0 and ZombRand(100) < 80 then sq:BurnWalls(false) end   -- 바닥 탈 확률: 80%
                         if ZombRand(100) < 30 and sq:isFree(false) then                     -- 바닥 잿더미 확률: 10%
                             local obj = IsoObject.new(sq, "floors_burnt_01_1", "")
-                            sq:AddSpecialObject(obj)
+                            -- transmitAddObjectToSquare가 로컬 추가(AddTileObject)와 클라 전파를
+                            -- 한 번에 처리한다. AddSpecialObject를 먼저 부르면 obj가 이미 Objects에
+                            -- 들어가 가드(!Objects.contains)에 걸려 전파가 스킵되므로 호출하지 않는다.
+                            -- index=-1 = 리스트 끝에 append (AddTileObject에서 안전 처리).
+                            sq:transmitAddObjectToSquare(obj, -1)
                         end
                     end
                 end
