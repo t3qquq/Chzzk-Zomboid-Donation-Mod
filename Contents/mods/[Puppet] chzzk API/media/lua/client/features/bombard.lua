@@ -3,7 +3,6 @@ local _b = require("config")
 require("ISUI/ISPanel")
 
 local BombardTimerDisplay = ISPanel:derive("BombardTimerDisplay")
-local _d  -- bomb tick handler reference
 
 DOTex = DOTex or {}
 DOTex.tex = nil
@@ -123,69 +122,87 @@ end
 
 _a.b = function(a)
     local b = a:getModData()
-    local c = _b.KaboomTime
-    if not b.bombTimerInitialized then
-        b.bombTimer            = 0
-        b.bombTimerInitialized = true
+
+    -- 동시 금지: 이미 폭탄이 카운트다운 중이면 큐에 쌓아두고, 현재 폭탄이 터진 뒤
+    -- 다음 것을 순차로 발동한다. 동시에 두 개가 도는 일은 없다.
+    b.bombPending = b.bombPending or 0
+    if b.timeBombActivated then
+        b.bombPending = b.bombPending + 1
+        return
     end
-    b.bombTimer = b.bombTimer + c
-    if not b.timeBombActivated then
-        b.timeBombActivated = false
-    end
 
-    -- Explosion sequence run when timer reaches zero.
-    local function triggerExplosion()
-        local e = a:getX()
-        local f = a:getY()
+    -- 폭탄 하나를 시작. detonation 시 큐에 남은 게 있으면 자기 자신을 다시 호출한다.
+    local function startBomb()
+        b.bombTimer         = _b.KaboomTime
+        b.timeBombActivated = true
 
-        DOTex.tex   = getTexture("media/textures/mask_white.png") -- 원하는 텍스처
-        DOTex.alpha = 2
-        getSoundManager():PlaySound("day_one_kaboom", false, 1.0)
+        -- handler를 호출별 로컬로 둬서 자기 자신만 정확히 제거한다.
+        -- (모듈 전역 _d를 공유해 엉뚱한 핸들러를 제거하던 버그 제거)
+        local handler
 
-        local radius = 55
-        local payload = {}
-        payload.r = radius
-        sendClientCommand("Schedule", "Kaboom", payload)
+        -- Explosion sequence run when timer reaches zero.
+        local function triggerExplosion()
+            local e = a:getX()
+            local f = a:getY()
 
-        -- Kill nearby bandits.
-        local bandits = BanditZombie and BanditZombie.GetAll and BanditZombie.GetAll() or {}
-        for n, o in pairs(bandits) do
-            local dist = math.sqrt(math.pow(o.x - e, 2) + math.pow(o.y - f, 2))
-            if dist < radius then
-                local q = BanditZombie.GetInstanceById(n)
-                if q and q:isOutside() then
-                    q:setCrawler(true)
-                    q:setHealth(0)
-                    q:clearAttachedItems()
-                    q:changeState(ZombieOnGroundState.instance())
-                    q:becomeCorpse()
+            DOTex.tex   = getTexture("media/textures/mask_white.png") -- 원하는 텍스처
+            DOTex.alpha = 2
+            getSoundManager():PlaySound("day_one_kaboom", false, 1.0)
+
+            local radius = 55
+            local payload = {}
+            payload.r = radius
+            sendClientCommand("Schedule", "Kaboom", payload)
+
+            -- Kill nearby bandits.
+            local bandits = BanditZombie and BanditZombie.GetAll and BanditZombie.GetAll() or {}
+            for n, o in pairs(bandits) do
+                local dist = math.sqrt(math.pow(o.x - e, 2) + math.pow(o.y - f, 2))
+                if dist < radius then
+                    local q = BanditZombie.GetInstanceById(n)
+                    if q and q:isOutside() then
+                        q:setCrawler(true)
+                        q:setHealth(0)
+                        q:clearAttachedItems()
+                        q:changeState(ZombieOnGroundState.instance())
+                        q:becomeCorpse()
+                    end
+                end
+            end
+
+            -- Damage the donee (same logic shared with nearby clients).
+            applyBlastInjury(a)
+
+            Events.OnTick.Remove(handler)
+            b.timeBombActivated = false
+
+            -- 큐에 대기 중인 폭탄이 있으면 다음 것을 순차 발동.
+            if (b.bombPending or 0) > 0 then
+                b.bombPending = b.bombPending - 1
+                startBomb()
+            end
+        end
+
+        handler = function()
+            if b.bombTimer then
+                b.bombTimer = b.bombTimer - 1
+                if b.bombTimer == 480 then
+                    getSoundManager():PlaySound("explosion", false, 1.0)
+                    sendClientCommand("Schedule", "PlayExplosion", {})
+                end
+                if b.bombTimer <= 0 then
+                    b.bombTimer = 0
+                    triggerExplosion()
                 end
             end
         end
 
-        -- Damage the donee (same logic shared with nearby clients).
-        applyBlastInjury(a)
-        Events.OnTick.Remove(_d)
+        Events.OnTick.Add(handler)
+        b.timeBombActivated = true
+        _a.a(a)
     end
 
-    _d = function()
-        if b.bombTimer then
-            b.bombTimer = b.bombTimer - 1
-            if b.bombTimer == 480 then
-                getSoundManager():PlaySound("explosion", false, 1.0)
-                sendClientCommand("Schedule", "PlayExplosion", {})
-            end
-            if b.bombTimer <= 0 then
-                b.bombTimer         = 0
-                Events.OnTick.Remove(_d)
-                b.timeBombActivated = false
-                triggerExplosion()
-            end
-        end
-    end
-    Events.OnTick.Add(_d)
-    b.timeBombActivated = true
-    _a.a(a)
+    startBomb()
 end
 
 Events.OnServerCommand.Add(function(a, b, c)
