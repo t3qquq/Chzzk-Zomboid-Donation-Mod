@@ -28,9 +28,9 @@
 	general: cid = 1a9db80f-9f5e-4e9e-a842-a9ca9a6bc220
 	general: name = Hitman_Melee_02
 	general: female = false
-	general: skin = 4
-	general: hairType = 19
-	general: beardType = 2
+	general: skin = 2
+	general: hairType = 10
+	general: beardType = 1
 	general: hairColor = 12
 	general: health = 7
 	general: strength = 7
@@ -54,8 +54,8 @@
 	general: name = Hitman_Melee_03
 	general: female = false
 	general: skin = 1
-	general: hairType = 6
-	general: beardType = 1
+	general: hairType = 19
+	general: beardType = 2
 	general: hairColor = 12
 	general: health = 7
 	general: strength = 7
@@ -108,7 +108,7 @@
 [3b8ecbe4-8617-45be-876e-26eaae755d46]
 	general: modid = Hitmans2
 	general: cid = 7b0273ef-54db-444f-97f9-bf2b22e7fe38
-	general: name = Ranged_AR
+	general: name = Ranged_Assaulter
 	general: female = true
 	general: skin = 1
 	general: hairType = 5
@@ -117,7 +117,7 @@
 	general: health = 10
 	general: strength = 10
 	general: endurance = 10
-	general: sight = 8
+	general: sight = 6
 	general: exp1 = 9
 	general: exp2 = 12
 	general: exp3 = 0
@@ -129,17 +129,15 @@
 	clothing: Shoes = Base.Shoes_ArmyBoots
 	tint: Boilersuit = 3355443
 	weapons: primary = Base.AssaultRifle
-	weapons: secondary = Base.Pistol
 	weapons: melee = Base.Machete
 	ammo: primary = 3
-	ammo: secondary = 3
 	bag: name = Base.Bag_WeaponBag
 
 
 [325dbf7d-c7ab-4448-95fd-6d891db970a6]
 	general: modid = Hitmans2
 	general: cid = 7b0273ef-54db-444f-97f9-bf2b22e7fe38
-	general: name = Ranged_DMR
+	general: name = Ranged_Sniper
 	general: female = false
 	general: skin = 1
 	general: hairType = 6
@@ -159,8 +157,7 @@
 	clothing: TorsoExtraVest = Base.Vest_Hunting_Grey
 	clothing: Shoes = Base.Shoes_ArmyBoots
 	tint: Boilersuit = 3355443
-	weapons: primary = Base.AssaultRifle2
-	weapons: secondary = Base.Revolver_Long
+	weapons: primary = Base.HuntingRifle
+	weapons: melee = Base.HuntingKnife
 	ammo: primary = 2
-	ammo: secondary = 3
-	bag: name = Base.RifleCase1
+	bag: name = Base.Bag_WeaponBag
