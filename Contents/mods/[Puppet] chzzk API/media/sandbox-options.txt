@@ -61,8 +61,3 @@ option Hitmans.General_ArrivalIcon = {
     type = boolean, default = true,
     page = Hitmans_General, translation = Hitmans.ArrivalIcon,
 }
-
-option Hitmans.General_OverallAccuracy = {
-    type = enum, numValues=5, default = 3,
-    page = Hitmans_General, translation = Hitmans.OverallAccuracy, _tooltip=Hitmans.OverallAccuracyTooltip, valueTranslation=Hitmans.OverallAccuracy,
-}
