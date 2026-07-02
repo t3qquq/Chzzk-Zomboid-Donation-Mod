@@ -1165,7 +1165,7 @@ local function ManageCombat(hitman)
             local veh = enemyCharacter:getVehicle()
             if veh then Hitman.Say(hitman, "CAR") end
 
-            if hitman:isFacingObject(enemyCharacter, 0.1) then
+            if hitman:isFacingObject(enemyCharacter, 0.5) then
                 local eid = HitmanUtils.GetCharacterID(enemyCharacter)
                 local task = {action="Push", anim="Shove", sound="AttackShove", time=60, endurance=-0.05, eid=eid, x=enemyCharacter:getX(), y=enemyCharacter:getY(), z=enemyCharacter:getZ()}
                 table.insert(tasks, task)
@@ -1586,7 +1586,7 @@ local function ProcessTask(hitman, task)
         -- normalize time speed
         local decrement = 1 / ((getAverageFPS() + 0.5) * 0.01666667)
         if task.action == "Smack" and Hitman.HasExpertise(hitman, Hitman.Expertise.Berserker) then
-            decrement = decrement * 3
+            decrement = decrement * 5
         end
         task.time = task.time - decrement
 
@@ -1779,6 +1779,23 @@ local function OnHitmanUpdate(zombie)
 
     -- NO ZOMBIE SOUNDS
     Hitman.SurpressZombieSounds(hitman)
+
+    -- COMPAT: the Bandits mod's zombie loop treats hitmen as ordinary zombies
+    -- (they have no "Bandit" variable), stripping hand items and re-enabling
+    -- teeth every tick (every 2nd tick once a bandit exists). Re-assert our
+    -- state each tick, same philosophy as the WALKTYPE force above.
+    hitman:setNoTeeth(true)
+    if not HitmanBrain.HasTaskTypes(brain, {"Equip", "Unequip"}) then
+        local expPrimary = hitman:getVariableString("HitmanPrimary")
+        if expPrimary and expPrimary ~= "" and not hitman:getPrimaryHandItem() then
+            Hitman.SetHands(hitman, expPrimary)
+        end
+        local expSecondary = hitman:getVariableString("HitmanSecondary")
+        if expSecondary and expSecondary ~= "" and not hitman:getSecondaryHandItem() then
+            local secondaryItem = HitmanCompatibility.InstanceItem(expSecondary)
+            if secondaryItem then hitman:setSecondaryHandItem(secondaryItem) end
+        end
+    end
 
     -- CANNIBALS
     if not brain.eatBody then
