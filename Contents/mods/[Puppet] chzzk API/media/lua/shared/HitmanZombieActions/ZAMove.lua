@@ -50,6 +50,7 @@ HitmanZombieActions.Move.onStart = function(zombie, task)
         zombie:getPathFindBehavior2():pathToLocation(task.x, task.y, task.z)
         zombie:getPathFindBehavior2():cancel()
         zombie:setPath2(nil)
+        task.pathOwnerId = HitmanUtils.GetCharacterID(getSpecificPlayer(0))
     end
 
     return true
@@ -76,6 +77,21 @@ HitmanZombieActions.Move.onWorking = function(zombie, task)
     -- local finder = zombie:getFinder()
     if HitmanUtils.IsController(zombie) then
         local cell = getCell()
+
+        -- COMPAT: controller authority (closest-player) can flip mid-task in MP.
+        -- pathToLocation was only issued once, in onStart, by whoever was
+        -- controller back then. If a different client just became controller,
+        -- its pathFindBehavior2 was never given this destination, so update()
+        -- would run on an empty/stale path -> the zombie's animation keeps
+        -- playing while it doesn't actually move (looks like slow motion).
+        -- Re-issue the path request on handoff.
+        local myId = HitmanUtils.GetCharacterID(getSpecificPlayer(0))
+        if task.pathOwnerId ~= myId then
+            zombie:getPathFindBehavior2():pathToLocation(task.x, task.y, task.z)
+            zombie:getPathFindBehavior2():cancel()
+            zombie:setPath2(nil)
+            task.pathOwnerId = myId
+        end
 
         --[[if ZombRand(1000) == 1 then
             zombie:getPathFindBehavior2():pathToLocation(task.x+1, task.y+1, task.z)

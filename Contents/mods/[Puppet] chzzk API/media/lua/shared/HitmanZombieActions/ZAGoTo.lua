@@ -40,12 +40,26 @@ HitmanZombieActions.GoTo.onStart = function(zombie, task)
 
     if HitmanUtils.IsController(zombie) then
         zombie:pathToLocationF(task.x, task.y, task.z)
+        task.pathOwnerId = HitmanUtils.GetCharacterID(getSpecificPlayer(0))
     end
 
     return true
 end
 
 HitmanZombieActions.GoTo.onWorking = function(zombie, task)
+
+    -- COMPAT: same controller-handoff issue as Move (see ZAMove.lua). GoTo
+    -- only issues pathToLocationF once, in onStart, on whichever client was
+    -- controller at that moment. If authority hands off to a new closest
+    -- player mid-task, re-issue it here so movement doesn't silently stall
+    -- while the walk animation keeps playing.
+    if HitmanUtils.IsController(zombie) then
+        local myId = HitmanUtils.GetCharacterID(getSpecificPlayer(0))
+        if task.pathOwnerId ~= myId then
+            zombie:pathToLocationF(task.x, task.y, task.z)
+            task.pathOwnerId = myId
+        end
+    end
 
     return false
 end
