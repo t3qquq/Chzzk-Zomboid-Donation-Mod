@@ -1,4 +1,0 @@
-UI_UA = {
-    UI_optionscreen_binding_Hitmans = "Бандит?,
-	UI_optionscreen_binding_POSTS = "Керування охоронними постам?,
-}
