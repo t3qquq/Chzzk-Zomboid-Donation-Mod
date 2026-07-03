@@ -64,6 +64,7 @@ Hitman.Expertise.Traitor = 14
 Hitman.Expertise.Sacrificer = 15
 Hitman.Expertise.Zombiemaster = 16
 Hitman.Expertise.Berserker = 17
+Hitman.Expertise.Sharpshooter = 18
 
 Hitman.Engine = true
 
@@ -73,7 +74,7 @@ end
 
 
 function Hitman.ForceSyncPart(zombie, syncData)
-    sendClientCommand(getSpecificPlayer(0), 'Commands', 'HitmanUpdatePart', syncData)
+    sendClientCommand(getSpecificPlayer(0), 't3_Commands', 'HitmanUpdatePart', syncData)
 end
 
 function Hitman.AddTask(zombie, task)
@@ -344,7 +345,7 @@ function Hitman.SetMaster(zombie, master)
     if brain then
         brain.master = master
         -- HitmanBrain.Update(zombie, brain)
-        -- sendClientCommand(getPlayer(), 'Commands', 'HitmanUpdate', brain)
+        -- sendClientCommand(getPlayer(), 't3_Commands', 'HitmanUpdate', brain)
     end
 end
 
@@ -365,7 +366,7 @@ function Hitman.SetProgram(zombie, program, programParams)
 
         -- HitmanBrain.Update(zombie, brain)
     end
-    -- sendClientCommand(getPlayer(), 'Commands', 'HitmanUpdate', brain)
+    -- sendClientCommand(getPlayer(), 't3_Commands', 'HitmanUpdate', brain)
 end
 
 function Hitman.SetProgramStage(zombie, stage)
@@ -374,7 +375,7 @@ function Hitman.SetProgramStage(zombie, stage)
         brain.program.stage = stage
         -- HitmanBrain.Update(zombie, brain)
     end
-    -- sendClientCommand(getPlayer(), 'Commands', 'HitmanUpdate', brain)
+    -- sendClientCommand(getPlayer(), 't3_Commands', 'HitmanUpdate', brain)
 end
 
 -- Hitman hostility
@@ -495,7 +496,7 @@ function Hitman.SetWeapons(zombie, weapons)
         brain.weapons = weapons
         -- HitmanBrain.Update(zombie, brain)
         Hitman.UpdateItemsToSpawnAtDeath(zombie)
-        -- sendClientCommand(getPlayer(), 'Commands', 'HitmanUpdate', brain)
+        -- sendClientCommand(getPlayer(), 't3_Commands', 'HitmanUpdate', brain)
     end
 end
 
@@ -520,7 +521,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
     inventory:getAllEvalRecurse(predicateAll, items)
     for i=0, items:size()-1 do
         local item = items:get(i)
-        item:getModData().preserve = true
+        item:getModData().hitmanPreserve = true
         zombie:addItemToSpawnAtDeath(item)
     end
 
@@ -528,7 +529,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
     if weapons.melee and weapons.melee ~= "Base.BareHands" then 
         local item = HitmanCompatibility.InstanceItem(weapons.melee)
         if item then
-            item:getModData().preserve = true
+            item:getModData().hitmanPreserve = true
             item = HitmanCompatibility.SetRandomCondition(item, 0.8)
             zombie:addItemToSpawnAtDeath(item)
         end
@@ -540,7 +541,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
             local gun = HitmanCompatibility.InstanceItem(weapons.primary.name)
             if gun then
                 gun = HitmanUtils.ModifyWeapon(gun, brain)
-                gun:getModData().preserve = true
+                gun:getModData().hitmanPreserve = true
                 gun = HitmanCompatibility.SetRandomCondition(gun, 0.8)
                 zombie:addItemToSpawnAtDeath(gun)
             end
@@ -548,7 +549,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
             if weapons.primary.type == "mag" and weapons.primary.magName then
                 local mag = HitmanCompatibility.InstanceItem(weapons.primary.magName)
                 if mag then
-                    mag:getModData().preserve = true
+                    mag:getModData().hitmanPreserve = true
                     mag:setCurrentAmmoCount(weapons.primary.bulletsLeft)
                     mag:setMaxAmmo(weapons.primary.magSize)
                     zombie:addItemToSpawnAtDeath(mag)
@@ -557,7 +558,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
                 for i=1, weapons.primary.magCount do
                     local mag = HitmanCompatibility.InstanceItem(weapons.primary.magName)
                     if mag then
-                        mag:getModData().preserve = true
+                        mag:getModData().hitmanPreserve = true
                         mag:setCurrentAmmoCount(weapons.primary.magSize)
                         mag:setMaxAmmo(weapons.primary.magSize)
                         zombie:addItemToSpawnAtDeath(mag)
@@ -567,7 +568,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
                 for i=1, weapons.primary.ammoCount do
                     local ammo = HitmanCompatibility.InstanceItem(weapons.primary.ammoName)
                     if ammo then
-                        ammo:getModData().preserve = true
+                        ammo:getModData().hitmanPreserve = true
                         zombie:addItemToSpawnAtDeath(ammo)
                     end
                 end
@@ -581,7 +582,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
             local gun = HitmanCompatibility.InstanceItem(weapons.secondary.name)
             if gun then
                 gun = HitmanUtils.ModifyWeapon(gun, brain)
-                gun:getModData().preserve = true
+                gun:getModData().hitmanPreserve = true
                 gun = HitmanCompatibility.SetRandomCondition(gun, 0.8)
                 zombie:addItemToSpawnAtDeath(gun)
             end
@@ -589,7 +590,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
             if weapons.secondary.type == "mag" and weapons.secondary.magName then
                 local mag = HitmanCompatibility.InstanceItem(weapons.secondary.magName)
                 if mag then
-                    mag:getModData().preserve = true
+                    mag:getModData().hitmanPreserve = true
                     mag:setCurrentAmmoCount(weapons.secondary.bulletsLeft)
                     mag:setMaxAmmo(weapons.secondary.magSize)
                     zombie:addItemToSpawnAtDeath(mag)
@@ -598,7 +599,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
                 for i=1, weapons.secondary.magCount do
                     local mag = HitmanCompatibility.InstanceItem(weapons.secondary.magName)
                     if mag then
-                        mag:getModData().preserve = true
+                        mag:getModData().hitmanPreserve = true
                         mag:setCurrentAmmoCount(weapons.secondary.magSize)
                         mag:setMaxAmmo(weapons.secondary.magSize)
                         zombie:addItemToSpawnAtDeath(mag)
@@ -608,7 +609,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
                 for i=1, weapons.secondary.ammoCount do
                     local ammo = HitmanCompatibility.InstanceItem(weapons.secondary.ammoName)
                     if ammo then
-                        ammo:getModData().preserve = true
+                        ammo:getModData().hitmanPreserve = true
                         zombie:addItemToSpawnAtDeath(ammo)
                     end
                 end
@@ -638,7 +639,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
     if brain.clothing then
         for _, itemType in pairs(brain.clothing) do
             local item = HitmanCompatibility.InstanceItem(itemType)
-            item:getModData().preserve = true
+            item:getModData().hitmanPreserve = true
             zombie:addItemToSpawnAtDeath(item)
         end
     end]]
@@ -647,7 +648,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
     if brain.bag and brain.bag.name then
         bag = HitmanCompatibility.InstanceItem(brain.bag.name)
         if bag then
-            bag:getModData().preserve = true
+            bag:getModData().hitmanPreserve = true
             zombie:addItemToSpawnAtDeath(bag)
         end
     end
@@ -909,7 +910,7 @@ function Hitman.UpdateItemsToSpawnAtDeath(zombie)
             if tab.chance > r then
                 local item = HitmanCompatibility.InstanceItem(HitmanCompatibility.GetLegacyItem(tab.itemType))
                 if item then
-                    item:getModData().preserve = true
+                    item:getModData().hitmanPreserve = true
                     zombie:addItemToSpawnAtDeath(item)
                 end
             end

@@ -1,7 +1,7 @@
-ZSClient = {}
-ZSClient.Commands = {}
+HitmanZSClient = HitmanZSClient or {}
+HitmanZSClient.t3_Commands = {}
 
-ZSClient.Commands.UpdateVehicle = function(args)
+HitmanZSClient.t3_Commands.UpdateVehicle = function(args)
     for i=0, 100 do
         local vehicleList = getCell():getVehicles()
         for i=0, vehicleList:size()-1 do
@@ -26,7 +26,7 @@ ZSClient.Commands.UpdateVehicle = function(args)
     end
 end
 
-ZSClient.Commands.UpdateHitmanPart = function(args)
+HitmanZSClient.t3_Commands.UpdateHitmanPart = function(args)
     local id = args.id
     if id then
         local hitman = HitmanZombie.Cache[id]
@@ -50,7 +50,7 @@ ZSClient.Commands.UpdateHitmanPart = function(args)
     end
 end
 
-ZSClient.Commands.UpdateHealth  = function(args)
+HitmanZSClient.t3_Commands.UpdateHealth  = function(args)
     local id = args.id
     if id then
         local zombie = HitmanZombie.Cache[id]
@@ -64,24 +64,24 @@ ZSClient.Commands.UpdateHealth  = function(args)
     end
 end
 
-ZSClient.Commands.SendCustomToClients = function(args)
+HitmanZSClient.t3_Commands.SendCustomToClients = function(args)
     HitmanCustom.hitmanData = args.hitmanData
     HitmanCustom.clanData = args.clanData
     HitmanCustom.Save()
 end
 
-ZSClient.Commands.SetMarker  = function(args)
+HitmanZSClient.t3_Commands.SetMarker  = function(args)
     HitmanEventMarkerHandler.set(getRandomUUID(), args.icon, args.time, args.x, args.y, args.color, args.desc)
 end
 
 local onServerCommand = function(module, command, args)
-    if ZSClient[module] and ZSClient[module][command] then
+    if HitmanZSClient[module] and HitmanZSClient[module][command] then
         local argStr = ""
         for k, v in pairs(args) do
             argStr = argStr .. " " .. k .. "=" .. tostring(v)
         end
         -- print ("client received " .. module .. "." .. command .. " "  .. argStr)
-        ZSClient[module][command](args)
+        HitmanZSClient[module][command](args)
     end
 end
 

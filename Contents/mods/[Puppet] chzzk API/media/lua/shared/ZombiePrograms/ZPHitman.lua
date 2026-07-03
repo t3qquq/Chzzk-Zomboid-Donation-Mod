@@ -1,12 +1,12 @@
-ZombiePrograms = ZombiePrograms or {}
+HitmanZombiePrograms = HitmanZombiePrograms or {}
 
-ZombiePrograms.Hitman = {}
-ZombiePrograms.Hitman.Stages = {}
+HitmanZombiePrograms.Hitman = {}
+HitmanZombiePrograms.Hitman.Stages = {}
 
-ZombiePrograms.Hitman.Init = function(hitman)
+HitmanZombiePrograms.Hitman.Init = function(hitman)
 end
 
-ZombiePrograms.Hitman.Prepare = function(hitman)
+HitmanZombiePrograms.Hitman.Prepare = function(hitman)
     local tasks = {}
 
     Hitman.ForceStationary(hitman, false)
@@ -14,7 +14,7 @@ ZombiePrograms.Hitman.Prepare = function(hitman)
     return {status=true, next="Main", tasks=tasks}
 end
 
-ZombiePrograms.Hitman.Main = function(hitman)
+HitmanZombiePrograms.Hitman.Main = function(hitman)
     local tasks = {}
     local cell = getCell()
     local bx, by, bz = hitman:getX(), hitman:getY(), hitman:getZ()
@@ -58,9 +58,14 @@ ZombiePrograms.Hitman.Main = function(hitman)
     config.mustSee = true
     config.hearDist = 7
 
-    if Hitman.HasExpertise(hitman, Hitman.Expertise.Recon) then
+    if Bandit.HasExpertise(hitman, Hitman.Expertise.Recon)
+    and Bandit.HasExpertise(hitman, Hitman.Expertise.Tracker) then
+        config.hearDist = 80
+
+    elseif Bandit.HasExpertise(hitman, Hitman.Expertise.Recon) then
         config.hearDist = 20
-    elseif Hitman.HasExpertise(hitman, Hitman.Expertise.Tracker) then
+
+    elseif Bandit.HasExpertise(hitman, Hitman.Expertise.Tracker) then
         config.hearDist = 60
     end
 

@@ -2,17 +2,17 @@ HitmanBrain = HitmanBrain or {}
 
 function HitmanBrain.Get(zombie)
     local modData = zombie:getModData()
-    return modData.brain
+    return modData.hitmanBrain
 end
 
 function HitmanBrain.Update(zombie, brain)
     local modData = zombie:getModData()
-    modData.brain = brain
+    modData.hitmanBrain = brain
 end
 
 function HitmanBrain.Remove(zombie)
     local modData = zombie:getModData()
-    modData.brain = nil
+    modData.hitmanBrain = nil
 end
 
 function HitmanBrain.IsOutOfAmmo(brain)

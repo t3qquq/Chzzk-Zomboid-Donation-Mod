@@ -20,7 +20,7 @@
 	weapons: melee = Base.Machete
 
 [437879e7-0341-43d9-a36f-85fe7ac44526]
-	general: modid = Hitmans2
+	general: modid = t3chzzkDonation
 	general: cid = 1a9db80f-9f5e-4e9e-a842-a9ca9a6bc220
 	general: name = Melee_Rookie2
 	general: female = false
@@ -41,7 +41,7 @@
 	weapons: melee = Base.Machete
 
 [6610823d-756a-4c85-8450-6846496cddea]
-	general: modid = Hitmans2
+	general: modid = t3chzzkDonation
 	general: cid = 1a9db80f-9f5e-4e9e-a842-a9ca9a6bc220
 	general: name = Melee_Knifefighter
 	general: female = false
@@ -67,7 +67,7 @@
 	weapons: melee = Base.HuntingKnife
 
 [e5c7a77b-e352-4848-97e0-11e828a27c09]
-	general: modid = Hitmans2
+	general: modid = t3chzzkDonation
 	general: cid = 1a9db80f-9f5e-4e9e-a842-a9ca9a6bc220
 	general: name = Melee_Swordsman
 	general: female = true
@@ -92,7 +92,7 @@
 	clothing: Shoes = Base.Shoes_ArmyBoots
 	tint: Hat = 6710886
 	tint: TorsoExtraVest = 4473924
-	weapons: melee = Base.HuntingKnife
+	weapons: melee = Base.Katana
 
 
 
@@ -100,7 +100,7 @@
 
 
 [3b8ecbe4-8617-45be-876e-26eaae755d46]
-	general: modid = Hitmans2
+	general: modid = t3chzzkDonation
 	general: cid = 7b0273ef-54db-444f-97f9-bf2b22e7fe38
 	general: name = Ranged_Assaulter
 	general: female = true
@@ -114,7 +114,7 @@
 	general: sight = 6
 	general: exp1 = 9
 	general: exp2 = 12
-	general: exp3 = 0
+	general: exp3 = 18
 	clothing: MaskEyes = Base.Hat_GasMask
 	clothing: Hat = Base.Hat_BeretArmy
 	clothing: Hands = Base.Gloves_LeatherGlovesBlack
@@ -129,7 +129,7 @@
 
 
 [325dbf7d-c7ab-4448-95fd-6d891db970a6]
-	general: modid = Hitmans2
+	general: modid = t3chzzkDonation
 	general: cid = 7b0273ef-54db-444f-97f9-bf2b22e7fe38
 	general: name = Ranged_Sniper
 	general: female = false
@@ -143,7 +143,7 @@
 	general: sight = 10
 	general: exp1 = 9
 	general: exp2 = 12
-	general: exp3 = 0
+	general: exp3 = 18
 	clothing: Eyes = Base.Glasses_Eyepatch_Left
 	clothing: Hat = Base.Hat_BeretArmy
 	clothing: Hands = Base.Gloves_LeatherGlovesBlack

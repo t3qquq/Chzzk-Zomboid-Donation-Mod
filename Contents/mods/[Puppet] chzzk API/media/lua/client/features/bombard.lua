@@ -115,6 +115,31 @@ local function applyBlastInjury(p)
     end
 end
 
+-- 반경 내 좀비 킬 (이 클라이언트가 소유한 좀비만).
+-- B41 멀티에서 좀비는 클라이언트 권한이므로, 소유 클라가 정상 킬 시퀀스
+-- (setAttackedBy 포함, ZADie와 동일)로 죽여야 서버/저장에 죽음이 영구 반영된다.
+-- 서버사이드 setHealth/becomeCorpse는 소유 클라의 동기화 패킷에 덮여 무효.
+local function killZombiesAround(cx, cy, radius)
+    local cell = getCell()
+    if not cell then return end
+    local zl = cell:getZombieList()
+    if not zl then return end
+    for i = zl:size() - 1, 0, -1 do
+        local z = zl:get(i)
+        if z and not z:isDead() and not z:isRemoteZombie() and z:isOutside() then
+            local dist = math.sqrt(math.pow(z:getX() - cx, 2) + math.pow(z:getY() - cy, 2))
+            if dist < radius then
+                z:setCrawler(true)
+                z:setHealth(0)
+                z:clearAttachedItems()
+                z:changeState(ZombieOnGroundState.instance())
+                z:setAttackedBy(cell:getFakeZombieForHit())
+                z:becomeCorpse()
+            end
+        end
+    end
+end
+
 -- 폭발 처리 공용 함수
 local function doExplosion(a, b, handler, afterExplode)
     local e = a:getX()
@@ -127,20 +152,7 @@ local function doExplosion(a, b, handler, afterExplode)
     local radius = 55
     sendClientCommand("Schedule", "Kaboom", {r = radius})
 
-    local bandits = HitmanZombie and HitmanZombie.GetAll and HitmanZombie.GetAll() or {}
-    for n, o in pairs(bandits) do
-        local dist = math.sqrt(math.pow(o.x - e, 2) + math.pow(o.y - f, 2))
-        if dist < radius then
-            local q = HitmanZombie.GetInstanceById(n)
-            if q and q:isOutside() then
-                q:setCrawler(true)
-                q:setHealth(0)
-                q:clearAttachedItems()
-                q:changeState(ZombieOnGroundState.instance())
-                q:becomeCorpse()
-            end
-        end
-    end
+    killZombiesAround(e, f, radius)
 
     applyBlastInjury(a)
     Events.OnTick.Remove(handler)
@@ -195,9 +207,29 @@ Events.OnServerCommand.Add(function(a, b, c)
         elseif b == "PlayAlert" then
             getSoundManager():PlaySound("alert", false, 1.0)
         elseif b == "NearbyExplosion" then
-            applyBlastInjury(getPlayer())
-            DOTex.tex   = getTexture("media/textures/mask_white.png")
-            DOTex.alpha = 2
+            -- 서버가 전 클라에 브로드캐스트 (x/y/r 포함).
+            -- 각 클라는 자기가 소유한 좀비를 반경 내에서 죽이고,
+            -- 자기 캐릭터가 반경 안이면 부상/섬광도 적용한다.
+            local cx = tonumber(c and c.x)
+            local cy = tonumber(c and c.y)
+            local cr = tonumber(c and c.r) or 55
+            local me = getPlayer()
+            if cx and cy then
+                killZombiesAround(cx, cy, cr)
+                if me then
+                    local dist = math.sqrt(math.pow(me:getX() - cx, 2) + math.pow(me:getY() - cy, 2))
+                    if dist < cr then
+                        applyBlastInjury(me)
+                        DOTex.tex   = getTexture("media/textures/mask_white.png")
+                        DOTex.alpha = 2
+                    end
+                end
+            else
+                -- 구버전 서버(좌표 미포함) 호환: 기존 동작 유지
+                applyBlastInjury(me)
+                DOTex.tex   = getTexture("media/textures/mask_white.png")
+                DOTex.alpha = 2
+            end
         end
     end
 end)
@@ -242,3 +274,4 @@ end
 Events.OnTick.Add(onTickRecovery)
 
 return _a
+

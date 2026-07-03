@@ -2,11 +2,11 @@ HitmanPost = HitmanPost or {}
 
 function HitmanPost.GuardToggle(player, x, y, z)
     local args = {x=x, y=y, z=z, type="guard"}
-    sendClientCommand(player, 'Commands', 'PostToggle', args)
+    sendClientCommand(player, 't3_Commands', 'PostToggle', args)
 end
 
 function HitmanPost.Update(player, post)
-    sendClientCommand(player, 'Commands', 'PostUpdate', post)
+    sendClientCommand(player, 't3_Commands', 'PostUpdate', post)
 end
 
 function HitmanPost.At(character, ptype)
@@ -74,7 +74,7 @@ end
 
 function HitmanPost.Render()
     local playerObj = getSpecificPlayer(0)
-	local bo = ZSPosts:new("", "", playerObj)
+	local bo = HitmanZSPosts:new("", "", playerObj)
 	getCell():setDrag(bo, playerObj:getPlayerNum())
 end
 

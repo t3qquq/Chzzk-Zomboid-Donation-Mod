@@ -124,28 +124,17 @@ DOServer["Schedule"]["Kaboom"] = function(player, data)
             end
         end
     end
-    -- Kill zombies in radius.
-    local zl = e:getZombieList()
-    if zl then
-        for i = 0, zl:size() - 1 do
-            local z = zl:get(i)
-            if z and not z:isDead() then
-                local dist = math.sqrt(math.pow(z:getX() - cx, 2) + math.pow(z:getY() - cy, 2))
-                if dist < r then
-                    z:setHealth(0)
-                end
-            end
-        end
-    end
-    -- Notify nearby players.
+    -- 좀비 킬은 서버에서 하지 않는다.
+    -- B41 멀티에서 좀비는 클라이언트 권한(client-authoritative)이므로 서버사이드
+    -- setHealth/becomeCorpse는 소유 클라의 동기화에 덮여 저장에 반영되지 않는다
+    -- (재접속 시 일반좀비로 부활하는 원인). 대신 폭발 좌표/반경을 전 클라에
+    -- 브로드캐스트하고, 각 클라가 자기 소유 좀비를 정상 킬 시퀀스로 죽인다
+    -- (bombard.lua의 killZombiesAround). 도네이터 본인은 이미 로컬에서 처리했으므로 제외.
     local players = getOnlinePlayers()
     for i = 0, players:size() - 1 do
         local p = players:get(i)
         if p:getOnlineID() ~= player:getOnlineID() then
-            local dist = math.sqrt(math.pow(p:getX() - cx, 2) + math.pow(p:getY() - cy, 2))
-            if dist < r then
-                sendServerCommand(p, "Schedule", "NearbyExplosion", {})
-            end
+            sendServerCommand(p, "Schedule", "NearbyExplosion", {x = cx, y = cy, r = r})
         end
     end
 end
@@ -209,3 +198,4 @@ local function onDonationStats(module, command, player, data)
     end
 end
 Events.OnClientCommand.Add(onDonationStats)
+
