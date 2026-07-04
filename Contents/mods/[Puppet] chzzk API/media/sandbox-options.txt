@@ -1,5 +1,19 @@
 VERSION = 1,
 
+/***** DONATION UI *****/
+
+option Hitmans.Donation_ShowPanel = {
+    type = boolean, default = true,
+    page = Hitmans_Donation, translation = Hitmans_Donation_ShowPanel,
+}
+
+option Hitmans.Donation_PrepDelay = {
+    type = integer, min = 0, max = 10, default = 5,
+    page = Hitmans_Donation, translation = Hitmans_Donation_PrepDelay,
+}
+
+
+
 /***** GENERAL *****/
 
 option Hitmans.General_KillCounter = {
@@ -61,3 +75,4 @@ option Hitmans.General_ArrivalIcon = {
     type = boolean, default = true,
     page = Hitmans_General, translation = Hitmans.ArrivalIcon,
 }
+

@@ -6,12 +6,17 @@ local zombie        = require("features/zombie")
 local global        = require("global")
 
 -- ── UI settings ───────────────────────────────────────────────────────────────
-local uiSettings = { panelScale = 1.0 }
+-- anchorX/anchorY: nil = default top-right. Set by dragging any panel; persisted.
+local uiSettings = { panelScale = 1.0, anchorX = nil, anchorY = nil }
 
 local function saveUISettings()
     local w = getFileWriter("DonationUI.ini", true, false)
     if not w then return end
     w:write("panelScale=" .. tostring(uiSettings.panelScale) .. "\n")
+    if uiSettings.anchorX ~= nil then
+        w:write("anchorX=" .. tostring(uiSettings.anchorX) .. "\n")
+        w:write("anchorY=" .. tostring(uiSettings.anchorY) .. "\n")
+    end
     w:close()
 end
 
@@ -23,12 +28,17 @@ local function loadUISettings()
     while line do
         local k, v = line:match("^(%w+)=(.+)$")
         if k == "panelScale" then uiSettings.panelScale = tonumber(v) or 1.0 end
+        if k == "anchorX" then uiSettings.anchorX = tonumber(v) end
+        if k == "anchorY" then uiSettings.anchorY = tonumber(v) end
         line = r:readLine()
     end
     r:close()
 end
 
 -- ── Panel layout ──────────────────────────────────────────────────────────────
+-- PANEL_DURATION_MS is now ONLY the "applied" confirmation duration (fixed 5s).
+-- The prep countdown before the effect fires comes from the sandbox option
+-- Hitmans.Donation_PrepDelay (0..10s) -- see prepDurationMs().
 local PANEL_DURATION_MS = 5000
 
 local BASE_W       = 320
@@ -38,9 +48,26 @@ local BASE_PAD_Y   = 20
 local BASE_GAP     = 6
 local BASE_ICON_W  = 60
 local BASE_IMARGIN = 12
+local BASE_CLOSE_W = 20      -- close ("X") hit area, top-right corner of each panel
 
 local function sc(v)
     return math.floor(v * uiSettings.panelScale)
+end
+
+-- ── Sandbox options (server-wide) ─────────────────────────────────────────────
+-- Read at use time (SandboxVars is not populated at file-load time).
+local function showPanelEnabled()
+    local sv = SandboxVars and SandboxVars.Hitmans
+    if sv and sv.Donation_ShowPanel == false then return false end
+    return true      -- option missing (old save) -> default: show
+end
+
+local function prepDurationMs()
+    local sv = SandboxVars and SandboxVars.Hitmans
+    local s = sv and tonumber(sv.Donation_PrepDelay)
+    if s == nil then s = 5 end
+    if s < 0 then s = 0 elseif s > 10 then s = 10 end
+    return math.floor(s * 1000)
 end
 
 -- ── URL decode ────────────────────────────────────────────────────────────────
@@ -107,6 +134,10 @@ local function buildLabel(featureId, sender, message)
     return label
 end
 
+-- forward declarations (mouse handlers on the panel need these)
+local repositionPanels
+local removePanel
+
 -- ── Donation entry panel ──────────────────────────────────────────────────────
 local DonationEntryPanel = ISPanel:derive("DonationEntryPanel")
 local panelList = {}
@@ -118,6 +149,7 @@ function DonationEntryPanel:new(entry)
     b.background  = false
     b.borderColor = {r=0, g=0, b=0, a=0}
     b.entry = entry
+    b.dragging = false
     return b
 end
 
@@ -128,7 +160,9 @@ end
 function DonationEntryPanel:render()
     local e     = self.entry
     local rem   = math.max(0, e.remaining_ms)
-    local prog  = rem / PANEL_DURATION_MS
+    local dur   = e.duration_ms or PANEL_DURATION_MS
+    if dur <= 0 then dur = 1 end
+    local prog  = rem / dur
     local secs  = math.max(0, math.ceil(rem / 1000))
     local col   = colorMap[e.featureId] or {0.5, 0.5, 0.5}
     local icon  = sc(BASE_ICON_W)
@@ -146,7 +180,10 @@ function DonationEntryPanel:render()
     if e.sender and e.sender ~= "" then
         self:drawText("from " .. e.sender, textX, sc(34), 0.7, 0.7, 0.7, 1, UIFont.Small)
     end
-    self:drawText(tostring(secs) .. "s", self.width - sc(38), sc(10), 1, 0.95, 0.35, 1, UIFont.Large)
+    self:drawText(tostring(secs) .. "s", self.width - sc(56), sc(10), 1, 0.95, 0.35, 1, UIFont.Large)
+
+    -- close button (top-right corner)
+    self:drawText("X", self.width - sc(15), sc(2), 0.6, 0.6, 0.6, 1, UIFont.Small)
 
     local barX = textX
     local barY = self.height - sc(16)
@@ -160,10 +197,56 @@ end
 
 function DonationEntryPanel:update() end
 
+-- Drag: moving ANY panel moves the whole stack anchor (persisted on release).
+-- Close: X in the top-right corner hides THIS panel only -- the countdown keeps
+-- running invisibly, so the donation effect still fires on schedule.
+function DonationEntryPanel:onMouseDown(x, y)
+    if not self:getIsVisible() then return end
+    if x >= self.width - sc(BASE_CLOSE_W) and y <= sc(BASE_CLOSE_W) then
+        removePanel(self.entry)
+        return true
+    end
+    self.dragging = true
+    self:bringToTop()
+    return true
+end
+
+function DonationEntryPanel:onMouseMove(dx, dy)
+    if not self.dragging then return end
+    if uiSettings.anchorX == nil then          -- first drag: seed anchor from current pos
+        local first = panelList[1] or self
+        uiSettings.anchorX = first:getX()
+        uiSettings.anchorY = first:getY()
+    end
+    uiSettings.anchorX = uiSettings.anchorX + dx
+    uiSettings.anchorY = uiSettings.anchorY + dy
+    repositionPanels()
+end
+
+DonationEntryPanel.onMouseMoveOutside = DonationEntryPanel.onMouseMove
+
+function DonationEntryPanel:onMouseUp(x, y)
+    if self.dragging then
+        self.dragging = false
+        saveUISettings()
+    end
+end
+
+DonationEntryPanel.onMouseUpOutside = DonationEntryPanel.onMouseUp
+
 -- ── Panel stack ───────────────────────────────────────────────────────────────
-local function repositionPanels()
-    local x = getCore():getScreenWidth() - sc(BASE_W) - BASE_PAD_X
-    local y = BASE_PAD_Y
+repositionPanels = function()
+    local sw = getCore():getScreenWidth()
+    local sh = getCore():getScreenHeight()
+    local x, y
+    if uiSettings.anchorX ~= nil then
+        x, y = uiSettings.anchorX, uiSettings.anchorY or BASE_PAD_Y
+    else
+        x, y = sw - sc(BASE_W) - BASE_PAD_X, BASE_PAD_Y
+    end
+    -- keep the stack on screen (resolution change / bad ini values)
+    x = math.max(0, math.min(x, sw - sc(BASE_W)))
+    y = math.max(0, math.min(y, sh - sc(BASE_H)))
     for _, p in ipairs(panelList) do
         p:setX(x)
         p:setY(y)
@@ -174,6 +257,7 @@ local function repositionPanels()
 end
 
 local function addPanel(entry)
+    if not showPanelEnabled() then return end   -- sandbox: UI off -> no panel, effect unaffected
     local p = DonationEntryPanel:new(entry)
     p:initialise()
     p:addToUIManager()
@@ -182,7 +266,7 @@ local function addPanel(entry)
     entry.panel = p
 end
 
-local function removePanel(entry)
+removePanel = function(entry)
     if not entry.panel then return end
     entry.panel:removeFromUIManager()
     for i = #panelList, 1, -1 do
@@ -221,6 +305,11 @@ function DonationSettingsPanel:createChildren()
     btnPlus:instantiate()
     self:addChild(btnPlus)
 
+    local btnResetPos = ISButton:new(158, 36, 72, 24, "Reset Pos", self, DonationSettingsPanel.resetPos)
+    btnResetPos:initialise()
+    btnResetPos:instantiate()
+    self:addChild(btnResetPos)
+
     local btnSave = ISButton:new(10, 66, 100, 24, "Save & Close", self, DonationSettingsPanel.saveAndClose)
     btnSave:initialise()
     btnSave:instantiate()
@@ -249,6 +338,13 @@ end
 function DonationSettingsPanel:scaleUp()
     local v = math.floor((uiSettings.panelScale + 0.1) * 10 + 0.5) / 10
     uiSettings.panelScale = math.min(2.0, v)
+    repositionPanels()
+end
+
+function DonationSettingsPanel:resetPos()
+    uiSettings.anchorX = nil
+    uiSettings.anchorY = nil
+    saveUISettings()
     repositionPanels()
 end
 
@@ -288,13 +384,17 @@ end
 -- ── Apply one donation locally (panel + reward) ──────────────────────────────
 -- amount는 통계/로그용, featureId가 실제 디스패치 키 (퍼펫 API가 amount->featureId
 -- 매핑을 보고 rewards.txt에 같이 실어 보낸다).
+-- Prep countdown duration = sandbox Hitmans.Donation_PrepDelay (0..10s).
+-- 0초면 준비 패널을 아예 안 띄우고 즉시 발동 (확인 패널은 그대로 5초).
 local function applyDonation(amount, featureId, sender, message)
     amount    = tostring(amount or "")
     featureId = tostring(featureId or "")
+    local prepMs = prepDurationMs()
     local entry = {
         label        = buildLabel(featureId, sender, message),
         sender       = sender,
-        remaining_ms = PANEL_DURATION_MS,
+        remaining_ms = prepMs,
+        duration_ms  = prepMs,   -- render progress bar denominator (prep phase)
         amount       = amount,
         featureId    = featureId,
         applied      = false,   -- false = prep countdown running; true = effect already fired
@@ -306,6 +406,7 @@ local function applyDonation(amount, featureId, sender, message)
         rewardManager.a(entry.featureId, entry.sender, function()
             removePanel(entry)
             entry.remaining_ms = PANEL_DURATION_MS
+            entry.duration_ms  = PANEL_DURATION_MS
             local found = false
             for _, e in ipairs(activeEntries) do if e == entry then found = true break end end
             if not found then table.insert(activeEntries, entry) end
@@ -313,6 +414,11 @@ local function applyDonation(amount, featureId, sender, message)
         end)
     end
     global.processingEvent = true   -- hold the queue through prep countdown + effect
+    if prepMs <= 0 then
+        entry.applied = true        -- 대기 0초: 준비 카운트다운/패널 생략, 즉시 발동
+        entry.fire()                -- 콜백이 activeEntries 등록 + 확인 패널 표시까지 처리
+        return
+    end
     table.insert(activeEntries, entry)
     addPanel(entry)
 end
