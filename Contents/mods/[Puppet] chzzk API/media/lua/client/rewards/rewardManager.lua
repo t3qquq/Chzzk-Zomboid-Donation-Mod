@@ -7,6 +7,7 @@ local bombard    = require("features/bombard")
 local eventUtils = require("utils/Event")
 local zone       = require("utils/zone")
 local zombie     = require("features/zombie")
+local riseup     = require("features/riseup")
 local global     = require("global")
 
 -- Spawn zombies, queueing the request if the player is still in a safe zone.
@@ -146,6 +147,13 @@ local rewardHandlers = {
             global.processingEvent = false
         end,
     },
+    ["rise_up_dead_man"] = {
+        immediate = false,
+        fn = function(sender)
+            riseup.a(global.player)
+            global.processingEvent = false
+        end,
+    },
 
 
     -- ── 신규 기획 (스텁, 미구현) ──────────────────────────────────────────────
@@ -189,13 +197,6 @@ local rewardHandlers = {
         immediate = false,
         fn = function(sender)
             -- TODO: 호드나이트
-            global.processingEvent = false
-        end,
-    },
-    ["rise_up_dead_man"] = {
-        immediate = false,
-        fn = function(sender)
-            -- TODO: 라이즈 업 데드 맨 (시체 전부 좀비로 부활)
             global.processingEvent = false
         end,
     },

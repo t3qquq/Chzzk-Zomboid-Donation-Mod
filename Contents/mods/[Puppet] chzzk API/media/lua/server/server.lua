@@ -165,6 +165,50 @@ DOServer["Schedule"]["PlayAlert"] = function(player, data)
     end
 end
 
+-- 라이즈 업 데드 맨: 반경 내 모든 시체(IsoDeadBody)를 좀비로 부활.
+-- 시체는 B41 MP에서 서버 권한(청크 데이터 + reanimated.bin 저장, 바닐라 디버그
+-- 시체제거도 /removezombies 서버 커맨드 경유)이므로 서버 한 곳에서만 처리해
+-- 클라이언트별 중복 부활을 원천 차단한다. reanimateNow()는 바닐라 디버그 메뉴
+-- "Reanimate (Zombie)"가 쓰는 강제 부활 API — 샌드박스 Reanimate 설정과 무관하게
+-- 즉시 부활시킨다 (DebugContextMenu.OnReanimateCorpse 와 동일).
+DOServer["Schedule"]["RiseUp"] = function(player, data)
+    local cx = tonumber(data["x"]) or player:getX()
+    local cy = tonumber(data["y"]) or player:getY()
+    local r  = tonumber(data["r"]) or 55
+    local cell = player:getCell()
+    local r2 = r * r
+    local raised = 0
+    for floor = 0, 7 do                    -- 다층 건물 내부 시체까지 포함
+        for dy = -r, r do
+            for dx = -r, r do
+                if dx * dx + dy * dy < r2 then
+                    local sq = cell:getGridSquare(cx + dx, cy + dy, floor)
+                    if sq then
+                        -- reanimateNow()가 시체를 스퀘어에서 제거하므로
+                        -- 순회 중 리스트 변형을 피하려고 먼저 수집 후 발동
+                        local smo = sq:getStaticMovingObjects()
+                        local bodies = nil
+                        for i = 0, smo:size() - 1 do
+                            local o = smo:get(i)
+                            if instanceof(o, "IsoDeadBody") then
+                                bodies = bodies or {}
+                                bodies[#bodies + 1] = o
+                            end
+                        end
+                        if bodies then
+                            for _, b in ipairs(bodies) do
+                                b:reanimateNow()
+                                raised = raised + 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    srvlog("RiseUp: " .. raised .. " corpses reanimated around " .. cx .. "," .. cy .. " r=" .. r)
+end
+
 local function onClientCommandDOServer(module, command, player, data)
     if DOServer[module] and DOServer[module][command] then
         DOServer[module][command](player, data)
