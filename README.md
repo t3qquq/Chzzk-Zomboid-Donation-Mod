@@ -1,6 +1,6 @@
 # 라스트오더 (LastOrder) — 좀보이드 B41 치지직 후원연동 시스템
 
-**최종 업데이트**: 2026-07-04
+**최종 업데이트**: 2026-07-05
 
 ---
 
@@ -51,18 +51,29 @@
   - modData 네임스페이싱 (충돌 방지)
 - ✅ 폭격 시스템 (Bombard)
   - 서버 → 전체 브로드캐스트 → 각 클라이언트가 자신이 소유한 좀비만 킬 (B41 좀비 권한 모델 대응)
-- ✅ 기능 구현 완료 (11개)
+- ✅ 기능 구현 완료 (12개)
   - debuff_roulette / buff_roulette / zombie_roulette
   - sprinter5 / bandit_melee / vaccine / bandit_ranged / exile / missile / backroom
-  - **random_skill_potion** (신규): 시크릿 물약 7종 (`serum_supreme` + 근력/지구력/달리기/은신 등 미니 세럼 6종), 확률 디스패치 supreme 1% / strength 9% / fitness 10% / 나머지 20%씩 (`ZombRand(100)` 합 100 고정), `OnEat` 핸들러 `skillpotion.lua`로 통합
+  - **random_skill_potion**: 시크릿 물약 7종 (`serum_supreme` + 근력/지구력/달리기/은신 등 미니 세럼 6종), 확률 디스패치 supreme 1% / strength 9% / fitness 10% / 나머지 20%씩 (`ZombRand(100)` 합 100 고정), `OnEat` 핸들러 `skillpotion.lua`로 통합
+    - ⚠ 알려진 버그: `media/scripts/*.txt`에 `--`(Lua 스타일) 주석 잘못 사용 → 파서가 `serum_strength` 블록 통째로 스킵. `/* */`로 교체 필요 (아직 미수정)
+  - **rise_up_dead_man** (신규): 도네 플레이어 반경 내 모든 시체(`IsoDeadBody`) 좀비로 부활
+    - 클라: `riseup.lua` — 좌표/반경만 서버 전송 (시체는 서버 권한 객체이므로 부활도 서버 한 곳에서만 처리, 폭격과 권한 모델 정반대)
+    - 서버: `server.lua`의 `DOServer["Schedule"]["RiseUp"]` — 반경 내 스퀘어 순회(0~7층) → `IsoDeadBody:reanimateNow()`
+    - 현재 플레이어 시체도 구분 없이 부활 대상에 포함됨 (`isFakeDead()` 필터 미적용 — 의도적 방치, 원하면 필터 추가 가능)
+    - 좀비였던 개체가 원래 스피드 타입(뛰좀 등) 유지한 채 부활하는지는 미확인 — 인게임 테스트 필요
+- ✅ 샌드박스 옵션 (신규, `Hitmans_Donation` 페이지)
+  - `Donation_BombardRadius` — 폭격 반경 (5~60타일, 기본 55)
+  - `Donation_RiseUpRadius` — 부활 반경 (5~60타일, 기본 55, 폭격 반경과 완전 별개 변수)
+  - `Donation_BombardDelay` — 폭격 발동 대기시간 (10~300초, 기본 60)
+  - 전부 `SandboxVars.Hitmans` 사용 시점 읽기 (`SandboxVars and SandboxVars.Hitmans` nil 가드 패턴)
 
 ---
 
 ## 🚧 진행 중 / 남은 작업
 
-### **A. 모드: 7개 featureId 스텁 구현** (우선순위 높음)
+### **A. 모드: 6개 featureId 스텁 구현** (우선순위 높음)
 
-#### `rewardManager.lua`에 등록된 스텁 7개
+#### `rewardManager.lua`에 등록된 스텁 6개
 
 | featureId | 라벨 | 설계 메모 | 의존성 | 추정 난이도 |
 |-----------|------|---------|--------|-----------|
@@ -72,7 +83,6 @@
 | `cdda_spawn` | CDDA 스크리머/브루트 소환 | CDDA 모드 의존성 확인 후 | 외부 모드 | ⭐⭐⭐ |
 | `secret_passage_kit` | 비밀통로 공사 키트 | `bombard.lua`의 `transmitAddObjectToSquare` 패턴 재사용 (벽 제거) | 맵 API | ⭐⭐⭐ |
 | `horde_night` | 호드나이트 | 대량 좀비 스폰 + 서버 부하 관리 (스폰 큐 확장) | Spawn API | ⭐⭐⭐ |
-| `rise_up_dead_man` | 시체 전부 부활 | 반경 제한 + 성능 최적화 (한꺼번에 10마리 제한?) | Corpse API | ⭐⭐⭐ |
 
 **진행 전략**:
 1. 난이도 ⭐부터 시작 (revive_ticket 제일 간단)
@@ -154,10 +164,10 @@ build.bat
 | 영역 | 완료율 | 비고 |
 |------|--------|------|
 | 인프라 (양쪽) | 100% | 통신 규약 + 런처 완성 |
-| 기능 구현 (모드) | 61% | 11/18 완료, 7개 스텁 대기 |
+| 기능 구현 (모드) | 67% | 12/18 완료, 6개 스텁 대기 |
 | UI 편의 (앱) | 100% | 티어 편집/프리셋 import/export/잠금 완료 |
 | 통계 도구 (앱) | 0% | profits.txt → xlsx 미착수 (포맷은 확정) |
-| **프로젝트 전체** | **~68%** | 모드 스텁 구현이 유일한 큰 덩어리 |
+| **프로젝트 전체** | **~72%** | 모드 스텁 구현이 유일한 큰 덩어리 |
 
 ---
 
@@ -187,7 +197,7 @@ build.bat
 
 ## 🎯 다음 단계
 
-**즉시**: 모드 스텁 1개 (revive_ticket) 구현 → 테스트
-**단기**: random_weapon 완료
+**즉시**: `random_skill_potion`의 `--` 주석 버그 수정 (`/* */`로 교체, `serum_strength` 스킵 문제) + `rise_up_dead_man` 인게임 테스트 (스피드 타입 유지 여부, 플레이어 시체 필터 여부 결정)
+**단기**: 모드 스텁 1개 (revive_ticket, 가장 간단) 구현 → random_weapon
 **중기**: vehicle_kit, secret_passage_kit, horde_night 완료
-**후기**: CDDA/rise_up_dead_man + profits.txt → xlsx 스크립트
+**후기**: CDDA + profits.txt → xlsx 스크립트
