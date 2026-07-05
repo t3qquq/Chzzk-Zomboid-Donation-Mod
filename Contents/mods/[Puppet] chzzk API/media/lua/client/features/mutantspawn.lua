@@ -146,7 +146,19 @@ end
 -- sendServerCommand("PEvents","MutantMark")로 쏜 zedId+kind를 받아두고
 -- OnZombieUpdate에서 onlineID로 매칭한다 (폭격 NearbyExplosion과 같은 채널).
 -- modData 경로는 SP/호스트 겸용 폴백으로 유지.
-local _pending = {}   -- [onlineID] = kind
+local _pending = {}   -- [onlineID] = { k=종류, s=후원자, e=만료시각(ms) }
+local PENDING_MS = 120000   -- MutantMark 유효시간(2분). 이후엔 레지스트리(pid)로 재적용.
+
+-- 만료 검사 겸용 리더. 만료된 항목은 즉시 제거 (ID 재활용 하이재킹 방지).
+local function pendingEntry(zid)
+    local p = _pending[zid]
+    if not p then return nil end
+    if type(p) == "table" and p["e"] and getTimestampMs() > p["e"] then
+        _pending[zid] = nil
+        return nil
+    end
+    return p
+end
 
 -- 영속 레지스트리: 서버가 특수좀비 탄생 시 글로벌 ModData "PuppetMutants"에
 -- 정규화ID -> kind 로 등록해둔다 (server.lua registerMutant 참고). 이 ID는
@@ -192,7 +204,11 @@ Events.OnServerCommand.Add(function(module, command, args)
         local zid  = args and tonumber(args["zedId"])
         local kind = args and args["kind"]
         if zid and kind then
-            _pending[zid] = { ["k"] = kind, ["s"] = args["sender"] }
+            -- 만료시각 포함: OnZombieDead가 안 뜨고 죽은 좀비의 스테일 항목이
+            -- onlineID 재활용으로 새 좀비를 하이재킹하는 것을 차단.
+            -- 만료 뒤 스트림-인 재적용은 레지스트리(pid)가 담당한다.
+            _pending[zid] = { ["k"] = kind, ["s"] = args["sender"],
+                              ["e"] = getTimestampMs() + PENDING_MS }
         end
     elseif command == "MutantRevive" then
         local x, y = tonumber(args and args["x"]), tonumber(args and args["y"])
@@ -238,9 +254,22 @@ end
 local function applyMutant(zombie)
     local md = zombie:getModData()
     local kind, sender = md["PuppetMutant"], md["PuppetMutantSender"]
-    if not kind then
-        local p = _pending[zombie:getOnlineID()]
-        if p then kind, sender = regEntry(p) end
+    -- 서버 MutantMark(pending)가 권위값. 좀비 스트림-인이 MutantMark보다 먼저
+    -- 도착한 경우 레지스트리 pid 충돌·스테일 pending으로 오배정된 kind가
+    -- md에 캐시될 수 있는데, 진짜 마크가 도착하는 즉시 여기서 교정한다.
+    local p = pendingEntry(zombie:getOnlineID())
+    if p then
+        local pk, ps = regEntry(p)
+        if pk and kind and pk ~= kind then
+            print("[PuppetMutant] corrected " .. tostring(kind) .. " -> " .. tostring(pk)
+                .. " zid=" .. tostring(zombie:getOnlineID()))
+            kind, sender = pk, ps
+            md["PuppetMutant"] = pk
+            md["PuppetMutantSender"] = ps
+            zombie:setVariable("PuppetMutantInit", false)   -- 올바른 kind로 재초기화
+        elseif not kind then
+            kind, sender = pk, ps
+        end
     end
     if not kind then
         kind, sender = regEntry(_registry[mutantKey(zombie)])
