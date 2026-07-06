@@ -24,6 +24,9 @@ local function registerMutant(zed, kind, sender)
     local reg = ModData.getOrCreate("PuppetMutants")
     reg[key] = { ["k"] = kind, ["s"] = sender }
     ModData.transmit("PuppetMutants")
+    print("[PongDu][REG] register key=" .. tostring(key)
+        .. " kind=" .. tostring(kind) .. " sender=" .. tostring(sender)
+        .. " zid=" .. tostring(zed:getOnlineID()))
 end
 
 -- Make a zombie into a sprinter.
@@ -254,7 +257,50 @@ DOServer["Schedule"]["PlayAlert"] = function(player, data)
     end
 end
 
--- 라이즈 업 데드 맨: 반경 내 모든 시체(IsoDeadBody)를 좀비로 부활.
+-- ── 사망 좌표 마크 (버그① 근본 수정) ──────────────────────────────────────────
+-- HitmanUtils.GetZombieID(corpse)는 IsoDeadBody에 getPersistentOutfitID가
+-- 아예 없어서 100% 예외를 던진다(Object tried to call nil in GetZombieID —
+-- 서버 로그로 확증, readable=0/marked=0 항상). 즉 "시체가 특수좀비였는지"를
+-- pid로 판별하는 건 구조적으로 불가능. kind를 아는 유일한 시점은 클라의
+-- OnZombieDead뿐이므로, 죽는 순간 좌표+kind+sender를 서버가 받아 저장해두고
+-- RiseUp이 시체의 좌표로 조회한다 (pid 대신 좌표가 진짜 키).
+local _deathMarks = {}
+local DEATHMARK_MS = 600000   -- 10분. 그 안에 강령술 안 하면 자연 소멸.
+
+Events.OnClientCommand.Add(function(module, command, player, data)
+    if module == "PEvents" and command == "MutantDeathMark" then
+        local x, y = tonumber(data and data["x"]), tonumber(data and data["y"])
+        local kind = data and data["kind"]
+        if x and y and kind then
+            _deathMarks[#_deathMarks + 1] = {
+                x = x, y = y, z = tonumber(data["z"]) or 0,
+                kind = kind, sender = data["sender"],
+                expire = getTimestampMs() + DEATHMARK_MS,
+            }
+            print("[PongDu][DeathMark] stored kind=" .. tostring(kind)
+                .. " @" .. tostring(x) .. "," .. tostring(y))
+        end
+    end
+end)
+
+-- 시체 스퀘어 좌표(±1)로 사망 마크 매칭·소모. 여러 시체가 겹치면 먼저
+-- 등록된 순서로 하나씩 소모 (드문 동시사망 케이스의 알려진 한계).
+local function matchDeathMark(sq, floor)
+    local sx, sy = sq:getX(), sq:getY()
+    local now = getTimestampMs()
+    for i = #_deathMarks, 1, -1 do
+        local m = _deathMarks[i]
+        if now > m.expire then
+            table.remove(_deathMarks, i)
+        elseif math.abs(m.x - sx) <= 1 and math.abs(m.y - sy) <= 1 and m.z == floor then
+            table.remove(_deathMarks, i)
+            return m.kind, m.sender
+        end
+    end
+    return nil
+end
+
+
 -- 시체는 B41 MP에서 서버 권한(청크 데이터 + reanimated.bin 저장, 바닐라 디버그
 -- 시체제거도 /removezombies 서버 커맨드 경유)이므로 서버 한 곳에서만 처리해
 -- 클라이언트별 중복 부활을 원천 차단한다. reanimateNow()는 바닐라 디버그 메뉴
@@ -262,6 +308,23 @@ end
 -- 즉시 부활시킨다 (DebugContextMenu.OnReanimateCorpse 와 동일).
 -- 라이즈 업 후처리 스윕 대상 목록 (아래 EveryOneMinute 스윕에서 소비)
 local _riseSweeps = {}
+
+-- reanimateNow() 직후 방금 부활한 좀비를 스퀘어에서 찾는다.
+-- 바닐라 디버그(doDebugZombieMenu)와 동일 패턴: getMovingObjects + IsoZombie.
+-- 한 스퀘어에서 여러 시체가 부활할 수 있으므로 이미 잡은 onlineID는 handled로 스킵.
+local function findFreshZombie(sq, handled)
+    local mo = sq:getMovingObjects()
+    if not mo then return nil end
+    for i = 0, mo:size() - 1 do
+        local o = mo:get(i)
+        if instanceof(o, "IsoZombie") and o:isAlive()
+            and not handled[o:getOnlineID()] then
+            handled[o:getOnlineID()] = true
+            return o
+        end
+    end
+    return nil
+end
 
 DOServer["Schedule"]["RiseUp"] = function(player, data)
     local cx = tonumber(data["x"]) or player:getX()
@@ -272,6 +335,8 @@ DOServer["Schedule"]["RiseUp"] = function(player, data)
     local raised = 0
     local readable = 0
     local marked = 0
+    local handled = {}                     -- 이번 RiseUp에서 이미 잡은 부활 좀비 onlineID
+    print("[PongDu][RiseUp] START x=" .. tostring(cx) .. " y=" .. tostring(cy) .. " r=" .. tostring(r))
     for floor = 0, 7 do                    -- 다층 건물 내부 시체까지 포함
         for dy = -r, r do
             for dx = -r, r do
@@ -291,22 +356,46 @@ DOServer["Schedule"]["RiseUp"] = function(player, data)
                         end
                         if bodies then
                             for _, b in ipairs(bodies) do
-                                -- 시체 pid는 사망까지 안정(로그로 검증) -> 정규화 키로
-                                -- 레지스트리 조회 = 이 시체가 특수좀비였는지 판정.
-                                -- 부활 좀비는 pid를 새로 발급받아(shared-descriptor)
-                                -- 레지스트리 직조회가 불가하므로, 부활 위치 마크를
-                                -- 전 클라에 브로드캐스트 -> 클라 OnZombieUpdate(발화
-                                -- 100% 검증됨)가 부활 좀비에 능력 재적용한다.
-                                local okN, key = pcall(function()
-                                    return tostring(HitmanUtils.GetZombieID(b))
-                                end)
-                                local kind, sender = nil, nil
-                                if okN and key then
-                                    kind, sender = regEntry(ModData.getOrCreate("PuppetMutants")[key])
-                                end
-                                if okN then readable = readable + 1 end
+                                -- ★버그① 수정: pid 대신 좌표 기반 death-mark로 kind 판별.
+                                -- GetZombieID(b)는 IsoDeadBody에 없는 메서드라 100% 예외였음
+                                -- (제거 — 매 시체마다 스택트레이스 찍던 낭비도 같이 해결됨).
+                                local kind, sender = matchDeathMark(sq, floor)
+                                print("[PongDu][RiseUp] corpse @" .. tostring(sq:getX())
+                                    .. "," .. tostring(sq:getY())
+                                    .. " deathMarkHit=" .. tostring(kind))
+                                if kind then readable = readable + 1 end
                                 b:reanimateNow()
                                 raised = raised + 1
+                                -- ── 핵심 수정 ────────────────────────────────
+                                -- 방금 부활한 좀비를 서버에서 직접 잡아서:
+                                --  ① setReanimateTimer(0) : 부활 예약 상태를 이 자리에서
+                                --     즉시 제거 -> 다음 사망 시 시체에 reanimateTime이
+                                --     안 박힌다. RiseSweep(반경·시간 제한)의 사각을
+                                --     원천 제거 (버그②: 재부팅 후 재부활).
+                                --  ② registerMutant(nz,...) : 서버 권위 pid로 즉시 재등록.
+                                --     기존엔 클라가 MutantReregister로 재등록했는데, 클라가
+                                --     본 부활좀비 pid와 서버가 다음 사이클에 시체에서 읽는
+                                --     pid가 어긋나면(동기화 레이스) 다음 부활이 일반좀비가
+                                --     됐다. 등록·조회를 둘 다 서버 pid(mutantKey)로 통일해
+                                --     구조적으로 일치시킨다 (버그①: 2회차 부활 일반화).
+                                local nz = findFreshZombie(sq, handled)
+                                if nz then
+                                    -- ★확증①: reanimateNow 후 좀비가 같은 sq에 즉시 올라오는가.
+                                    --   NOT FOUND가 계속 찍히면 서버 재등록/타이머클리어가
+                                    --   안 걸린다는 뜻 -> reanimateNow 반환값 경로로 전환 필요.
+                                    local before = -1
+                                    pcall(function() before = nz:getReanimateTimer() end)
+                                    pcall(function() nz:setReanimateTimer(0) end)
+                                    local after = -1
+                                    pcall(function() after = nz:getReanimateTimer() end)
+                                    print("[PongDu][RiseUp] fresh zombie zid=" .. tostring(nz:getOnlineID())
+                                        .. " newKey=" .. tostring(mutantKey(nz))
+                                        .. " timer " .. tostring(before) .. "->" .. tostring(after))
+                                    if kind then registerMutant(nz, kind, sender) end
+                                else
+                                    print("[PongDu][RiseUp] fresh zombie NOT FOUND on sq "
+                                        .. tostring(sq:getX()) .. "," .. tostring(sq:getY()))
+                                end
                                 if kind then
                                     marked = marked + 1
                                     sendServerCommand("PEvents", "MutantRevive", {
@@ -315,9 +404,9 @@ DOServer["Schedule"]["RiseUp"] = function(player, data)
                                         ["z"]      = floor,
                                         ["kind"]   = kind,
                                         ["sender"] = sender or "",
-                                        ["key"]    = key,
+                                        ["key"]    = nz and mutantKey(nz) or "N/A",
                                     })
-                                    srvlog("RiseUp revive-mark " .. kind .. " key=" .. key)
+                                    srvlog("RiseUp revive-mark " .. kind .. " @" .. sq:getX() .. "," .. sq:getY())
                                 end
                             end
                         end
@@ -326,7 +415,8 @@ DOServer["Schedule"]["RiseUp"] = function(player, data)
             end
         end
     end
-    srvlog("RiseUp: " .. raised .. " corpses, " .. readable .. " pid-readable, " .. marked .. " special marks, around " .. cx .. "," .. cy .. " r=" .. r)
+    srvlog("RiseUp: " .. raised .. " corpses, " .. readable .. " death-mark hits, " .. marked .. " special marks, around " .. cx .. "," .. cy .. " r=" .. r)
+    print("[PongDu][RiseUp] DONE raised=" .. raised .. " readable=" .. readable .. " marked=" .. marked)
     -- 요약을 클라에도 쏴서 client console.txt만으로 전 과정 관측 가능하게
     sendServerCommand("PEvents", "MutantReviveDebug", {
         ["total"] = raised, ["readable"] = readable, ["marked"] = marked,
@@ -375,6 +465,7 @@ Events.EveryOneMinute.Add(function()
     end
     if cleared > 0 then
         srvlog("RiseSweep: cleared ReanimateTimer on " .. cleared .. " zombies")
+        print("[PongDu][RiseSweep] cleared ReanimateTimer on " .. cleared .. " zombies (backstop)")
     end
     for i = #_riseSweeps, 1, -1 do
         _riseSweeps[i].left = _riseSweeps[i].left - 1
@@ -393,7 +484,26 @@ Events.LoadGridsquare.Add(function(sq)
     for i = 0, smo:size() - 1 do
         local o = smo:get(i)
         if instanceof(o, "IsoDeadBody") and not o:isPlayer() then
-            pcall(function() o:setReanimateTime(0) end)
+            pcall(function()
+                -- ★버그2 확증: 로드되는 좀비 시체가 실제로 부활 예약(reanimateTime>0)
+                --   또는 fakeDead=true를 물고 있는지 정리 '전에' 찍는다. 오염된
+                --   좀비 시체만 골라 로그 -> 재부팅 재부활의 직접 증거.
+                local rt = -1
+                pcall(function() rt = o:getReanimateTime() end)   -- 게터 없으면 -1 유지
+                local fd = o:isFakeDead()
+                if (rt and rt > 0) or fd then
+                    print("[PongDu][LoadGrid] tainted corpse @"
+                        .. tostring(sq:getX()) .. "," .. tostring(sq:getY())
+                        .. " reanimateTime=" .. tostring(rt) .. " fakeDead=" .. tostring(fd)
+                        .. " -> sanitizing")
+                end
+                o:setReanimateTime(0)
+                -- reanimateTime(0)의 엔진 해석이 '비활성'인지 '즉시'인지 확실치 않아
+                -- 결정적 플래그로 이중 차단: fakeDead=false면 그 시체는 '진짜 시체'가
+                -- 되어 자발적 재부활 대상에서 빠진다(디버그 메뉴의 Reanimate(Player)
+                -- 경로). 의도적 강령술(reanimateNow)은 fakeDead와 무관하게 계속 작동.
+                o:setFakeDead(false)
+            end)
         end
     end
 end)

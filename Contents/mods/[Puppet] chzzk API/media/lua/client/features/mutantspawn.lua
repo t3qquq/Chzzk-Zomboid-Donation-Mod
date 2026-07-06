@@ -277,12 +277,22 @@ local function applyMutant(zombie)
     end
     if not kind then
         kind, sender = regEntry(_registry[mutantKey(zombie)])
+        -- ★버그1(정상 케이스): 부활 좀비가 registry(서버 pid)로 잡히면 여기.
+        --   서버 [REG] 로그의 key와 이 key가 같아야 정상. 2회차 부활이
+        --   여기서 잡히면(=서버 재등록이 먹었으면) 수정 성공.
+        if kind then
+            print("[PuppetMutant] resolved via REGISTRY key=" .. tostring(mutantKey(zombie))
+                .. " kind=" .. tostring(kind) .. " zid=" .. tostring(zombie:getOnlineID()))
+        end
     end
     if not kind and zombie:isAlive()
         and not zombie:getVariableBoolean("PuppetMutantInit") then
         kind, sender = matchReviveMark(zombie)
         if kind then
             -- 새 pid를 서버 레지스트리에 재등록 (후원자 포함)
+            print("[PuppetMutant] resolved via REVIVE-MARK -> reregister key="
+                .. tostring(mutantKey(zombie)) .. " kind=" .. tostring(kind)
+                .. " zid=" .. tostring(zombie:getOnlineID()))
             sendClientCommand("PEvents", "MutantReregister", {
                 ["key"] = mutantKey(zombie), ["kind"] = kind,
                 ["sender"] = sender,
@@ -315,16 +325,34 @@ local function applyMutant(zombie)
 end
 Events.OnZombieUpdate.Add(applyMutant)
 
--- 죽으면 로컬 마크/쿨다운 정리 (+ 진단: 사망 시점 키 로깅 — 등록 키와
--- 비교해서 죽는 과정에서 pid 비트가 변형되는지 판별하기 위함)
+-- 죽으면 로컬 마크/쿨다운 정리 + 서버에 사망 좌표 리포트.
+-- ★버그① 근본 수정: 서버 RiseUp은 시체(IsoDeadBody)에 GetZombieID를 호출해
+-- 왔는데 IsoDeadBody엔 getPersistentOutfitID 자체가 없어 100% 예외
+-- (Object tried to call nil in GetZombieID) -> 시체→kind 판별이 원천 불가능했다
+-- (서버 로그로 확인: readable=0, marked=0 항상). kind를 아는 유일한 시점은
+-- "죽는 순간"의 클라이언트뿐이므로, 여기서 좌표+kind+sender를 서버로 보고하고
+-- 서버는 이걸 좌표 기반 _deathMarks에 저장해뒀다가 RiseUp이 시체 위치로 조회한다.
 Events.OnZombieDead.Add(function(zombie)
     local zid = zombie:getOnlineID()
-    local kind = zombie:getModData()["PuppetMutant"]
-        or regEntry(_pending[zid])
-        or regEntry(_registry[mutantKey(zombie)])
+    local kind, sender = regEntry(zombie:getModData()["PuppetMutant"])
+    if not sender then sender = zombie:getModData()["PuppetMutantSender"] end
+    if not kind then
+        local pk, ps = regEntry(_pending[zid])
+        kind, sender = pk, ps
+    end
+    if not kind then
+        local rk, rs = regEntry(_registry[mutantKey(zombie)])
+        kind, sender = rk, rs
+    end
     if kind then
         print("[PuppetMutant] dead " .. tostring(kind)
             .. " key=" .. mutantKey(zombie) .. " zid=" .. tostring(zid))
+        sendClientCommand("PEvents", "MutantDeathMark", {
+            ["x"] = zombie:getX(), ["y"] = zombie:getY(), ["z"] = zombie:getZ(),
+            ["kind"] = kind, ["sender"] = sender or "",
+        })
+        print("[PuppetMutant] death-mark reported @" .. tostring(zombie:getX())
+            .. "," .. tostring(zombie:getY()) .. " kind=" .. tostring(kind))
     end
     _pending[zid] = nil
     _nextScream[zid] = nil
