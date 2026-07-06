@@ -66,7 +66,7 @@ Hitman.Expertise.Zombiemaster = 16
 Hitman.Expertise.Knifemaster = 17
 Hitman.Expertise.Sharpshooter = 18
 
-Hitman.KnifemasterSpeedMult = 3.0
+Hitman.KnifemasterSpeedMult = 2.0
 
 Hitman.Engine = true
 
