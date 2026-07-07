@@ -82,6 +82,18 @@ local function spawnZombies(x, y, z, amount, useHighStats, sprint, sender)
         if lastSpawned and lastSpawned:size() > 0 then
             if sprint then
                 lastSpawned:get(0):setWalkType("sprint4")
+                -- 뛰좀도 특좀 파이프라인에 태워 부활 시 뜀을 복원한다.
+                -- sprint는 walkType(비영속)이라 reanimateNow 후 일반 걸음이 되는데,
+                -- PuppetMutant="sprinter"를 시체에 계승시키면 RiseUp이 이를 읽어
+                -- MutantRevive를 브로드캐스트하고, 클라 initMutant의 sprinter 분기가
+                -- 부활 좀비에 sprint walkType을 재적용한다. zid 스탬프 필수 —
+                -- 안 하면 staleSweep이 즉시 지운다.
+                local zsp = lastSpawned:get(0)
+                zsp:getModData()["PuppetMutant"] = "sprinter"
+                zsp:getModData()["PuppetMutantZid"] = zsp:getOnlineID()
+                if sender and sender ~= "" then
+                    zsp:getModData()["PuppetMutantSender"] = sender
+                end
             else
                 lastSpawned:get(0):setWalkType("walk")
             end
@@ -318,6 +330,15 @@ end
 -- 라이즈 업 후처리 스윕 대상 목록 (아래 EveryOneMinute 스윕에서 소비)
 local _riseSweeps = {}
 
+-- 부활 재스탬프 마크: RiseUp이 특좀 시체를 부활시킨 좌표를 잠깐 기록해둔다.
+-- reanimateNow로 부활한 좀비는 새 zid를 받지만 시체에서 물려받은
+-- PuppetMutantZid는 원래 zid(불일치)라, staleSweep이 '재활용 껍데기'로
+-- 오판해 md를 지워 다회차 부활이 깨진다. 이 마크로 "부활 직후 그 자리의
+-- zid불일치 좀비"는 삭제 대신 zid를 새로 스탬프(정상 부활)하고, 마크 없는
+-- 곳의 zid불일치 좀비만 삭제(풀 재활용)하도록 staleSweep이 구분한다.
+local _reviveRestamp = {}
+local REVIVE_RESTAMP_MS = 15000   -- 부활 후 이 시간 안에 재스탬프 처리
+
 -- reanimateNow() 직후 방금 부활한 좀비를 스퀘어에서 찾는다.
 -- 바닐라 디버그(doDebugZombieMenu)와 동일 패턴: getMovingObjects + IsoZombie.
 -- 한 스퀘어에서 여러 시체가 부활할 수 있으므로 이미 잡은 onlineID는 handled로 스킵.
@@ -425,6 +446,13 @@ DOServer["Schedule"]["RiseUp"] = function(player, data)
                                         ["sender"] = sender or "",
                                         ["key"]    = nz and mutantKey(nz) or "N/A",
                                     })
+                                    -- 서버측 재스탬프 마크: 이 자리에서 부활한 좀비는
+                                    -- staleSweep이 삭제 대신 zid 재스탬프하도록.
+                                    _reviveRestamp[#_reviveRestamp + 1] = {
+                                        x = sq:getX(), y = sq:getY(), z = floor,
+                                        kind = kind, sender = sender or "",
+                                        expire = getTimestampMs() + REVIVE_RESTAMP_MS,
+                                    }
                                     srvlog("RiseUp revive-mark " .. kind .. " @" .. sq:getX() .. "," .. sq:getY())
                                 end
                             end
@@ -479,24 +507,48 @@ local function staleSweep()
     local now = getTimestampMs()
     if now - _lastStaleSweep < STALE_SWEEP_MS then return end
     _lastStaleSweep = now
+    -- 만료된 부활 마크 정리
+    for i = #_reviveRestamp, 1, -1 do
+        if now > _reviveRestamp[i].expire then table.remove(_reviveRestamp, i) end
+    end
     local cell = getCell()
     if not cell then return end
     local zeds = cell:getZombieList()
     if not zeds then return end
-    local wiped = 0
+    local wiped, restamped = 0, 0
     for i = 0, zeds:size() - 1 do
         local z = zeds:get(i)
         local md = z:getModData()
         if md["PuppetMutant"] and md["PuppetMutantZid"] ~= z:getOnlineID() then
-            md["PuppetMutant"] = nil
-            md["PuppetMutantSender"] = nil
-            md["PuppetMutantZid"] = nil
-            md["_cs"] = nil
-            wiped = wiped + 1
+            -- zid 불일치: 부활 좀비인가(마크 근처) vs 풀 재활용인가(마크 없음).
+            local zx, zy = z:getX(), z:getY()
+            local reviveHit = nil
+            for _, m in ipairs(_reviveRestamp) do
+                if md["PuppetMutant"] == m.kind
+                    and math.abs(zx - m.x) <= 2 and math.abs(zy - m.y) <= 2 then
+                    reviveHit = m
+                    break
+                end
+            end
+            if reviveHit then
+                -- 정상 부활 좀비: 새 zid로 재스탬프 -> 이후 다회차 부활 정상.
+                md["PuppetMutantZid"] = z:getOnlineID()
+                restamped = restamped + 1
+            else
+                -- 풀 재활용 껍데기: 특좀 md 제거.
+                md["PuppetMutant"] = nil
+                md["PuppetMutantSender"] = nil
+                md["PuppetMutantZid"] = nil
+                md["_cs"] = nil
+                wiped = wiped + 1
+            end
         end
     end
     if wiped > 0 then
         print("[PongDu][StaleSweep] wiped stale PuppetMutant from " .. wiped .. " recycled zombies")
+    end
+    if restamped > 0 then
+        print("[PongDu][StaleSweep] re-stamped " .. restamped .. " reanimated mutants")
     end
 end
 Events.OnTick.Add(staleSweep)
