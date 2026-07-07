@@ -1,6 +1,6 @@
 version=1
-id=
-title=[Puppet] 치지직 도네이션 연동
-description=치지직 도네이션 연동 테스트
+id=3759572018
+title=[PongDu] - 치지직 도네이션 연동모드
+description=치지직 도네이션 연동
 tags=Build 41
 visibility=unlisted
