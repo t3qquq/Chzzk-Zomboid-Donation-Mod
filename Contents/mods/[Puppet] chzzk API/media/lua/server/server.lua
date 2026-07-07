@@ -94,6 +94,13 @@ local function spawnZombies(x, y, z, amount, useHighStats, sprint, sender)
                 if sender and sender ~= "" then
                     zsp:getModData()["PuppetMutantSender"] = sender
                 end
+                -- 특좀과 동일하게 MutantMark 브로드캐스트 -> 소환 즉시 클라가
+                -- "누구의 스프린터" 이름표를 표시(부활 때만 뜨던 것을 스폰부터).
+                sendServerCommand("PEvents", "MutantMark", {
+                    ["zedId"]  = zsp:getOnlineID(),
+                    ["kind"]   = "sprinter",
+                    ["sender"] = sender or "",
+                })
             else
                 lastSpawned:get(0):setWalkType("walk")
             end
