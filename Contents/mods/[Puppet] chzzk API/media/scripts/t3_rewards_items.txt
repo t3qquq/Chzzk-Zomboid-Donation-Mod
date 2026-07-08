@@ -158,7 +158,7 @@ item serum_sneak
 item weapon_box_melee
 {
     DisplayCategory     = Container,
-    Weight              = 3,
+    Weight              = 0.1,
     Type                = Normal,
     DisplayName         = Melee Weapon Box,
     Icon                = Toolbox,
@@ -168,7 +168,7 @@ item weapon_box_melee
 item weapon_box_ranged
 {
     DisplayCategory     = Container,
-    Weight              = 3,
+    Weight              = 0.1,
     Type                = Normal,
     DisplayName         = Ranged Weapon Box,
     Icon                = Toolbox,
@@ -201,7 +201,7 @@ recipe Open Weapon Box
 item vehicle_drop_kit
 {
     DisplayCategory = Communications,
-    Weight              = 1.5,
+    Weight              = 0.1,
     Type                = Normal,
     DisplayName         = Vehicle Drop Kit,
     Icon			= WalkieTalkieMilitary,

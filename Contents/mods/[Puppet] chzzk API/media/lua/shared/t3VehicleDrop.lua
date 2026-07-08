@@ -28,9 +28,23 @@ local function isValidDropSquare(sq)
     return true
 end
 
+local AREA_RADIUS = 7 -- 5x5 = 중심 기준 -2~+2
+
+-- (cx,cy) 중심 5x5 타일이 전부 유효한 실외공간인지 확인
+local function isValidDropArea(cell, cx, cy, pz)
+    for dx = -AREA_RADIUS, AREA_RADIUS do
+        for dy = -AREA_RADIUS, AREA_RADIUS do
+            local sq = cell:getGridSquare(cx + dx, cy + dy, pz)
+            if not isValidDropSquare(sq) then
+                return false
+            end
+        end
+    end
+    return true
+end
+
 -- 플레이어 좌표를 중심으로 링 단위(체비셰프 거리)로 확장 탐색.
--- 단일 타일 기준 체크만 하므로(차량 전체 폭은 미고려) InsurgentStartLUV의
--- 무검증 배치보다는 안전하지만 100% 충돌을 배제하진 못한다.
+-- 5x5 타일이 전부 유효해야 통과하므로 InsurgentStartLUV의 무검증 배치보다 훨씬 안전하다.
 local function findDropSquare(player)
     local cell = getCell()
     local pz = 0 -- 항상 지상 기준으로 탐색 (옥상/발코니에서 열어도 차는 지상에 떨어져야 함)
@@ -41,9 +55,9 @@ local function findDropSquare(player)
         for dx = -r, r do
             for dy = -r, r do
                 if math.max(math.abs(dx), math.abs(dy)) == r then
-                    local sq = cell:getGridSquare(px + dx, py + dy, pz)
-                    if isValidDropSquare(sq) then
-                        return sq
+                    local cx, cy = px + dx, py + dy
+                    if isValidDropArea(cell, cx, cy, pz) then
+                        return cell:getGridSquare(cx, cy, pz)
                     end
                 end
             end
@@ -107,5 +121,6 @@ function t3VehicleDrop.OpenKit(items, result, player)
             sender = donor,
         })
     end
+
     player:Say(getText("IGUI_donation_vehicle_drop") .. "!")
 end
