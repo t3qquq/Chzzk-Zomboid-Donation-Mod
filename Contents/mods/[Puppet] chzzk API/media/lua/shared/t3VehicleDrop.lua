@@ -33,7 +33,7 @@ end
 -- 무검증 배치보다는 안전하지만 100% 충돌을 배제하진 못한다.
 local function findDropSquare(player)
     local cell = getCell()
-    local pz = player:getZ()
+    local pz = 0 -- 항상 지상 기준으로 탐색 (옥상/발코니에서 열어도 차는 지상에 떨어져야 함)
     local px = math.floor(player:getX())
     local py = math.floor(player:getY())
 

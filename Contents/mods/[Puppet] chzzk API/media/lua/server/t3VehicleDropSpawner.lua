@@ -8,6 +8,20 @@ t3VehicleDrop = t3VehicleDrop or {}
 
 local TARGET_CONDITION = 90 -- 기증 차량 기본 상태 (0~100). 필요하면 조정.
 
+-- 차량 주변에 펼쳐진 낙하산 데코를 몇 개 뿌린다 (순수 연출용, 실패해도 무시).
+local PARACHUTE_OFFSETS = { {-2, 0}, {2, 0}, {0, 2} }
+
+local function scatterParachutes(square)
+    local cell = getCell()
+    local sx, sy, sz = square:getX(), square:getY(), square:getZ()
+    for _, offset in ipairs(PARACHUTE_OFFSETS) do
+        local sq = cell:getGridSquare(sx + offset[1], sy + offset[2], sz)
+        if sq and sq:isOutside() then
+            sq:AddWorldInventoryItem("t3chzzkDonation.t3DeployedParachute", 0.5, 0.5, 0)
+        end
+    end
+end
+
 function t3VehicleDrop.spawnVehicle(player, x, y, z, vehicleType, sender)
     local square = getCell():getGridSquare(x, y, z)
     if not square then
@@ -20,6 +34,8 @@ function t3VehicleDrop.spawnVehicle(player, x, y, z, vehicleType, sender)
         print("[t3VehicleDrop] 차량 소환 실패: " .. tostring(vehicleType))
         return
     end
+
+    scatterParachutes(square)
 
     -- addVehicleDebug 직후 반환값이 완전하지 않을 수 있어 재조회 (AirdroppedLUV와 동일 관례)
     local vehicleId = vehicle:getId()
