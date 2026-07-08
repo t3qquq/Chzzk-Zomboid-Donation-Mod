@@ -108,5 +108,6 @@ function t3VehicleDrop.OpenKit(items, result, player)
         })
     end
 
+    player:getEmitter():playSound("RadioTalk")
     player:Say(getText("IGUI_donation_vehicle_drop") .. "!")
 end

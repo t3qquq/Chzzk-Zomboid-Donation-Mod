@@ -198,12 +198,13 @@ recipe Open Weapon Box
 /* vehicle_drop donation: 개봉하면 근처 실외에 차량 한 대를 소환 */
 item vehicle_drop_kit
 {
-    DisplayCategory     = Container,
-    Weight              = 5,
+    DisplayCategory = Communications,
+    Weight              = 1.5,
     Type                = Normal,
     DisplayName         = Vehicle Drop Kit,
-    Icon                = Toolbox,
+    Icon			= WalkieTalkieMilitary,
     Tooltip             = Tooltip_vehicle_drop_kit,
+    StaticModel = WalkieTalkieUSArmy,
 }
 
 recipe Open Vehicle Drop Kit
