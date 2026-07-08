@@ -32,6 +32,12 @@ option Hitmans.Donation_MutantNameTag = {
     page = Hitmans_Donation, translation = Hitmans_Donation_MutantNameTag,
 }
 
+option Hitmans.Donation_VehicleDropPool = {
+    type = string,
+    default = "Base.PickupTruck;Base.Van;Base.CarNormal;Base.SUV;Base.StationWagon",
+    page = Hitmans_Donation, translation = Hitmans_Donation_VehicleDropPool,
+}
+
 
 
 /***** GENERAL *****/

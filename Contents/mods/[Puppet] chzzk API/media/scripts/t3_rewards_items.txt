@@ -188,5 +188,27 @@ recipe Open Weapon Box
     Sound:PutItemInBag,
 }
 
+/* vehicle_drop donation: 개봉하면 근처 실외에 차량 한 대를 소환 */
+item vehicle_drop_kit
+{
+    DisplayCategory     = Container,
+    Weight              = 5,
+    Type                = Normal,
+    DisplayName         = Vehicle Drop Kit,
+    Icon                = Toolbox,
+    Tooltip             = Tooltip_vehicle_drop_kit,
+}
+
+recipe Open Vehicle Drop Kit
+{
+    vehicle_drop_kit,
+    Result:PistolCase1,
+    RemoveResultItem:true,
+    OnCreate:t3VehicleDrop.OpenKit,
+    CanBeDoneFromFloor:true,
+    Time:150.0,
+    Sound:PutItemInBag,
+}
+
 }
 

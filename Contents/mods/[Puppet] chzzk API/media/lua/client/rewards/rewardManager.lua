@@ -172,10 +172,15 @@ local rewardHandlers = {
             global.processingEvent = false
         end,
     },
-    ["vehicle_kit"] = {
+    ["vehicle_drop"] = {
         immediate = false,
         fn = function(sender)
-            -- TODO: 차량소환키트
+            -- 개봉하면 t3VehicleDrop.OpenKit이 실행되어 근처 실외에 차량을 소환한다.
+            local item = global.player:getInventory():AddItem("t3chzzkDonation.vehicle_drop_kit")
+            if item then
+                item:setName((sender or "") .. "'s " .. item:getDisplayName())
+                item:getModData().t3Donor = sender or ""
+            end
             global.processingEvent = false
         end,
     },
