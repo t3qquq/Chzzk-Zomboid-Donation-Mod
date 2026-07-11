@@ -569,6 +569,20 @@ local function updateRoach(zombie)
     end
     zombie:setFallOnFront(true)
     zombie:setCanWalk(false)
+
+    -- 공격 패턴: 물기 대신 담장 런지의 다리걸기만 사용.
+    -- 물기 데미지는 애님 오버라이드(roach_attack_success)에서
+    -- AttackCollisionCheck 이벤트를 제거해 차단했고, 여기서 담장 런지와
+    -- 동일한 효과 함수 attackFromWindowsLunge()를 호출한다. 함수 내부
+    -- 게이트(lungeFallTimer 200 쿨다운, z/벽/문/창문 차단 검사, 좀비 오른손
+    -- 본 1m 근접판정)가 스스로 제한하므로 공격 상태 동안 매 틱 호출해도
+    -- 안전하다 - 손이 닿는 프레임에 정확히 한 번 걸린다.
+    -- (AttackState는 IsoZombie OnZombieUpdate 배제 목록에 없어 매 틱 보장)
+    local target = zombie:getTarget()
+    if target and instanceof(target, "IsoPlayer")
+        and zombie:getActionStateName() == "attack" then
+        target:attackFromWindowsLunge(zombie)
+    end
 end
 
 -- ── 적용기 본체 ───────────────────────────────────────────────────────────────
