@@ -44,7 +44,7 @@ local PANEL_DURATION_MS = 5000
 
 -- 쿨다운 아이콘 슬롯 레이아웃 (우하단 앵커, 옆으로 다다다 늘어남).
 -- 슬롯 하나 = 정사각형. 안에 약어 태그 + 큰 카운트다운 숫자 + 쿨다운 오버레이.
-local ICON_SIZE     = 70
+local ICON_SIZE     = 60
 local BASE_PAD_X    = 20     -- 화면 우측 여백
 local BASE_PAD_Y    = 20     -- 화면 상단 여백 (기본 위치 = 우측 최상단일 때)
 local BASE_GAP      = 6      -- 슬롯 사이 간격
@@ -320,10 +320,15 @@ local function getHotbarInstance()
     return pd and pd.playerHotbar
 end
 
-local function defaultAnchor(sz)
+-- count: 현재 쌓인 슬롯 개수. x0는 "슬롯1(맨 오른쪽)의 좌상단" 좌표라서,
+-- count가 1보다 크면 슬롯1을 그만큼 오른쪽으로 밀어줘야 묶음 전체(슬롯1~N)의
+-- 중앙이 화면 정중앙에 오게 된다.
+local function defaultAnchor(sz, count)
     local sw = getCore():getScreenWidth()
     local sh = getCore():getScreenHeight()
-    local x0 = math.floor(sw / 2 - sz / 2)   -- 화면 좌우 정중앙
+    count = count or 1
+    local groupHalfExtra = (count - 1) * (sz + sc(BASE_GAP)) / 2
+    local x0 = math.floor(sw / 2 - sz / 2 + groupHalfExtra)   -- 박스 묶음 전체의 좌우 정중앙
 
     -- 핫바 인스턴스에서 실제 y좌표를 가져와 그 바로 위에 배치.
     -- 아직 핫바가 준비 안 됐거나(로딩 중 등) 못 구했을 땐 화면 하단 기준 폴백값 사용.
@@ -344,7 +349,7 @@ repositionPanels = function()
     if uiSettings.anchorX ~= nil then
         x0, y0 = uiSettings.anchorX, uiSettings.anchorY
     else
-        x0, y0 = defaultAnchor(sz)
+        x0, y0 = defaultAnchor(sz, #panelList)
     end
     -- keep the stack on screen (resolution change / bad ini values)
     x0 = math.max(0, math.min(x0, sw - sz))
@@ -482,6 +487,12 @@ if ISPauseMenu then
     end
 end
 
+-- 도네이션 "도착 순서" 전역 카운터. 슬롯(activeEntries)은 featureId별로 병합되므로
+-- 슬롯 배열 순서 = 해당 featureId가 "처음 등장한" 순서일 뿐, 실제 도착 순서와 다르다.
+-- 버프-디버프-버프-디버프-버프처럼 번갈아 들어와도 발동은 도착한 순서대로 나가야
+-- 하므로, 유닛(스택 1개) 단위로 이 카운터 값을 매겨 직렬 헤드 선정에 사용한다.
+local donationSeq = 0
+
 -- ── Apply one donation locally (panel + reward) ──────────────────────────────
 -- amount는 통계/로그용, featureId가 실제 디스패치 키 (퍼펫 API가 amount->featureId
 -- 매핑을 보고 rewards.txt에 같이 실어 보낸다).
@@ -497,10 +508,12 @@ local function applyDonation(amount, featureId, sender, message)
     amount    = tostring(amount or "")
     featureId = tostring(featureId or "")
     local prepMs = prepDurationMs()
+    donationSeq = donationSeq + 1
     local entry = {
         label        = buildLabel(featureId, sender, message),
         sender       = sender,
         senders      = { sender },   -- 같은 featureId가 뒤이어 들어오면 여기 계속 쌓임 (스택)
+        arrivalSeq   = { donationSeq },   -- senders와 1:1 대응, 유닛별 도착 순번 (발동 순서 결정용)
         stack        = 1,
         remaining_ms = prepMs,
         duration_ms  = prepMs,   -- 유닛 1개 발동 간격 (스택 소모 주기로도 재사용)
@@ -629,7 +642,9 @@ local function tryMergeIntoSlot(item)
     for _, e in ipairs(activeEntries) do
         if e.featureId == item.featureId then
             e.stack = e.stack + 1
+            donationSeq = donationSeq + 1
             table.insert(e.senders, item.sender)
+            table.insert(e.arrivalSeq, donationSeq)
             return true
         end
     end
@@ -694,10 +709,17 @@ local function onTick()
         e.locked = nowLocked
     end
 
-    -- 2) 직렬 헤드 선정: 락/병렬이 아닌 슬롯 중 가장 앞
+    -- 2) 직렬 헤드 선정: 락/병렬이 아닌 슬롯들 중, 다음에 발동할 유닛의 도착 순번
+    --    (arrivalSeq[1])이 가장 오래된(가장 작은) 슬롯. 슬롯 배열 순서(=featureId가
+    --    처음 등장한 순서)가 아니라 실제 도네이션 도착 순서를 기준으로 삼아야
+    --    버프-디버프-버프-디버프-버프처럼 번갈아 들어와도 그 순서대로 발동된다.
     local serialHead = nil
     for _, e in ipairs(activeEntries) do
-        if not e.locked and not e.parallel then serialHead = e break end
+        if not e.locked and not e.parallel then
+            if serialHead == nil or (e.arrivalSeq[1] or 0) < (serialHead.arrivalSeq[1] or 0) then
+                serialHead = e
+            end
+        end
     end
 
     -- 3) 카운트다운/발동. counting 플래그는 render()가 진행/대기 표시 구분에 씀.
@@ -711,6 +733,7 @@ local function onTick()
                 -- 내부 안전지대 대기 없이 즉시 경로를 탄다 (같은 틱에 재진입하는
                 -- 극단적 레이스는 rewardManager.a 자체 재확인 루프가 흡수).
                 local unitSender = table.remove(e.senders, 1) or e.sender
+                table.remove(e.arrivalSeq, 1)
                 rewardManager.a(e.featureId, unitSender, nil)
                 e.stack = e.stack - 1
                 markQueueDirty()   -- 유닛 하나 소모됨 -> 저장 파일 갱신 필요
