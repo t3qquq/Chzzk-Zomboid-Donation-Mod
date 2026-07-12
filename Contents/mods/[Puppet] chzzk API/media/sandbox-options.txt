@@ -8,22 +8,22 @@ option PongDu.Donation_ShowPanel = {
 }
 
 option PongDu.Donation_PrepDelay = {
-    type = integer, min = 0, max = 10, default = 5,
+    type = integer, min = 0, max = 10, default = 3,
     page = PongDu, translation = PongDu_Donation_PrepDelay,
 }
 
 option PongDu.Bombard_Delay = {
-    type = integer, min = 10, max = 300, default = 60,
+    type = integer, min = 10, max = 300, default = 30,
     page = PongDu, translation = PongDu_Bombard_Delay,
 }
 
 option PongDu.Bombard_Radius = {
-    type = integer, min = 5, max = 60, default = 55,
+    type = integer, min = 5, max = 60, default = 30,
     page = PongDu, translation = PongDu_Bombard_Radius,
 }
 
 option PongDu.RiseUp_Radius = {
-    type = integer, min = 5, max = 60, default = 55,
+    type = integer, min = 5, max = 60, default = 30,
     page = PongDu, translation = PongDu_RiseUp_Radius,
 }
 
