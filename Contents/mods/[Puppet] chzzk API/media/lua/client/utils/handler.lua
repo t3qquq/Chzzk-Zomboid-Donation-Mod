@@ -1,48 +1,61 @@
 local handler = {}
 
 local updateText    = require("utils/updateText")
-local config        = require("config")
 local moodle        = require("features/moodle")
 local zombie        = require("features/zombie")
 local global        = require("global")
 local zone          = require("utils/zone")
 
--- Debuff moodle ticker: scrolls random text, then applies the debuff.  [.a]
+-- Debuff moodle: pick immediately (no scrolling ticker), apply after a short
+-- delay -- mirrors zombie roulette (handler.c) instead of the old 6초짜리
+-- 슬롯머신 스크롤. 그 스크롤 구간이 길어서 같은 종류가 겹쳐 발동되면
+-- global.chosenRandomText/textUpdateTimer를 서로 덮어써 꼬이던 문제도
+-- 지연이 500ms로 줄면서 사실상 해소됨.  [.a]
 function handler.a(_)
-    global.textUpdateTimer = global.textUpdateTimer + getGameTime():getTimeDelta() * 1000
-    if global.textUpdateTimer >= 200 then
-        updateText.b()
-        global.textUpdateTimer = 0
+    Events.OnTick.Remove(handler.a)
+    updateText.b()
+    getSoundManager():PlaySound("ding", false, 1.0)
+
+    local player = getPlayer()
+    if not player then global.processingEvent = false return end
+    local text = global.chosenRandomText
+    global.textUpdateTimer = 0
+    global.displayStartTime = 0
+
+    local elapsed = 0
+    local function applyDelay()
+        elapsed = elapsed + getGameTime():getTimeDelta() * 1000
+        if elapsed >= 500 then
+            Events.OnTick.Remove(applyDelay)
+            moodle.b(player, text)
+            global.processingEvent = false
+        end
     end
-    global.displayStartTime = global.displayStartTime + getGameTime():getTimeDelta() * 1000
-    if global.displayStartTime >= config.textDisplayDuration then
-        Events.OnTick.Remove(handler.a)
-        local player = getPlayer()
-        getSoundManager():PlaySound("ding", false, 1.0)
-        moodle.b(player, global.chosenRandomText)
-        global.textUpdateTimer = 0
-        global.displayStartTime = 0
-        global.processingEvent = false
-    end
+    Events.OnTick.Add(applyDelay)
 end
 
--- Buff moodle ticker: scrolls random text, then applies the buff.  [.b]
+-- Buff moodle: same treatment as handler.a above.  [.b]
 function handler.b(_)
-    global.textUpdateTimer = global.textUpdateTimer + getGameTime():getTimeDelta() * 1000
-    if global.textUpdateTimer >= 200 then
-        updateText.a()
-        global.textUpdateTimer = 0
+    Events.OnTick.Remove(handler.b)
+    updateText.a()
+    getSoundManager():PlaySound("ding", false, 1.0)
+
+    local player = getPlayer()
+    if not player then global.processingEvent = false return end
+    local text = global.chosenRandomText
+    global.textUpdateTimer = 0
+    global.displayStartTime = 0
+
+    local elapsed = 0
+    local function applyDelay()
+        elapsed = elapsed + getGameTime():getTimeDelta() * 1000
+        if elapsed >= 500 then
+            Events.OnTick.Remove(applyDelay)
+            moodle.a(player, text)
+            global.processingEvent = false
+        end
     end
-    global.displayStartTime = global.displayStartTime + getGameTime():getTimeDelta() * 1000
-    if global.displayStartTime >= config.textDisplayDuration then
-        Events.OnTick.Remove(handler.b)
-        local player = getPlayer()
-        getSoundManager():PlaySound("ding", false, 1.0)
-        moodle.a(player, global.chosenRandomText)
-        global.textUpdateTimer = 0
-        global.displayStartTime = 0
-        global.processingEvent = false
-    end
+    Events.OnTick.Add(applyDelay)
 end
 
 -- Zombie roulette: pick a random count, then spawn after a short delay.  [.c]
