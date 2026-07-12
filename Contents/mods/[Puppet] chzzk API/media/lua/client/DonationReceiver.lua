@@ -3,6 +3,7 @@ local config        = require("config")
 local rewardManager = require("rewards/rewardManager")
 local bandit        = require("features/hitman")
 local zombie        = require("features/zombie")
+local zone          = require("utils/zone")
 local global        = require("global")
 
 -- ── UI settings ───────────────────────────────────────────────────────────────
@@ -45,9 +46,8 @@ local PANEL_DURATION_MS = 5000
 -- 슬롯 하나 = 정사각형. 안에 약어 태그 + 큰 카운트다운 숫자 + 쿨다운 오버레이.
 local ICON_SIZE     = 46
 local BASE_PAD_X    = 20     -- 화면 우측 여백
-local BASE_PAD_Y    = 20     -- 화면 하단 여백
+local BASE_PAD_Y    = 20     -- 화면 상단 여백 (기본 위치 = 우측 최상단일 때)
 local BASE_GAP      = 6      -- 슬롯 사이 간격
-local BASE_CLOSE_W  = 12     -- close ("X") hit area, top-right corner of each slot
 
 local function sc(v)
     return math.floor(v * uiSettings.panelScale)
@@ -124,28 +124,29 @@ local colorMap = {
     ["rise_up_dead_man"]     = {0.4, 0.1, 0.5},
 }
 
--- 슬롯 상단에 찍는 짧은 약어 태그. 이미지 에셋 없이 색상+텍스트만으로 효과를
--- 구분하기 위함 (저작권 이슈 없는 순수 텍스트).
-local glyphKey = {
-    ["debuff_roulette"]      = "디버프",
-    ["buff_roulette"]        = "버프",
-    ["zombie_roulette"]      = "좀비",
-    ["sprinter5"]            = "질주",
-    ["bandit_melee"]         = "근접",
-    ["vaccine"]              = "백신",
-    ["bandit_ranged"]        = "원거리",
-    ["exile"]                = "추방",
-    ["backroom"]             = "백룸",
-    ["missile"]              = "폭격",
-    ["random_weapon"]        = "무기",
-    ["random_skill_potion"]  = "포션",
-    ["vehicle_drop"]         = "공수",
-    ["revive_ticket"]        = "부활",
-    ["mutant_spawn"]         = "변종",
-    ["secret_passage_kit"]   = "통로",
-    ["horde_night"]          = "호드",
-    ["rise_up_dead_man"]     = "기상",
-}
+-- 슬롯 아이콘 이미지 확장 지점. featureId -> 텍스처 경로. 지금은 비어있어서
+-- render()가 기존 색상 틴트 + 약어 태그로 폴백함. 나중에 실제 아이콘 이미지를
+-- 준비하면 여기에 경로만 채우면 됨 (예: ["missile"] = "media/textures/donation/missile.png").
+local iconTexPath = {}
+local iconTexCache = {}   -- featureId -> Texture 객체 (또는 없으면 false로 캐시)
+
+local function getIconTexture(featureId)
+    local path = iconTexPath[featureId]
+    if not path then return nil end
+    local cached = iconTexCache[featureId]
+    if cached == nil then
+        cached = getTexture(path) or false
+        iconTexCache[featureId] = cached
+    end
+    if cached == false then return nil end
+    return cached
+end
+
+-- 순수 효과 이름만 (후원 메시지 안 붙임) -- 큐박스 호버 툴팁 전용.
+local function effectName(featureId)
+    local key = labelKey[featureId]
+    return key and getText(key) or ("Effect " .. tostring(featureId))
+end
 
 local function buildLabel(featureId, sender, message)
     local key   = labelKey[featureId]
@@ -182,24 +183,39 @@ end
 
 function DonationEntryPanel:render()
     local e     = self.entry
-    local isActive = (activeEntries[1] == e)   -- 실제로 카운트다운 중인 건 맨 앞 슬롯뿐
     local rem   = math.max(0, e.remaining_ms)
     local dur   = e.duration_ms or PANEL_DURATION_MS
     if dur <= 0 then dur = 1 end
-    local prog  = rem / dur              -- 1 = 방금 시작(쿨다운 꽉 참), 0 = 발동/종료 직전
-    local secs  = math.max(0, math.ceil(rem / 1000))
+    local prog  = rem / dur              -- 1 = 방금 시작(쿨다운 꽉 참), 0 = 발동 직전
     local col   = colorMap[e.featureId] or {0.5, 0.5, 0.5}
     local w, h  = self.width, self.height
+    local tex   = getIconTexture(e.featureId)
 
-    -- 슬롯 베이스 (바닐라 인벤토리 슬롯 톤) + 효과색 옅은 틴트 (대기 슬롯은 더 흐리게)
-    self:drawRect(0, 0, w, h, 0.9, 0.05, 0.05, 0.05)
-    self:drawRect(0, 0, w, h, isActive and 0.16 or 0.07, col[1], col[2], col[3])
+    -- 슬롯 베이스 (회색빛이 도는 톤)
+    self:drawRect(0, 0, w, h, 0.9, 0.16, 0.16, 0.17)
 
-    -- 상단 약어 태그
-    local glyph = glyphKey[e.featureId] or "?"
-    self:drawTextCentre(glyph, w / 2, sc(3), col[1], col[2], col[3], isActive and 1 or 0.5, UIFont.Small)
+    if tex then
+        -- 실제 아이콘 이미지가 있으면 그걸 슬롯에 맞춰 그림
+        self:drawTextureScaledAspect(tex, 0, 0, w, h, 1, 1, 1, 1)
+    else
+        -- 이미지 없을 때 폴백: 효과색 옅은 틴트만 (텍스트는 호버 시에만, 아래 참고)
+        self:drawRect(0, 0, w, h, 0.16, col[1], col[2], col[3])
+    end
 
-    if isActive then
+    if e.locked then
+        -- 안전지대 락: 진행 오버레이 대신 전체를 어둡게 덮고 자물쇠 아이콘 표시.
+        -- 안전지대를 벗어나는 즉시 locked가 풀리며(병렬 레인으로 승격) 진행 오버레이로 전환.
+        self:drawRect(0, 0, w, h, 0.6, 0, 0, 0)
+        local cx    = math.floor(w / 2)
+        local bodyW = sc(14)
+        local bodyH = sc(10)
+        local bodyY = math.floor(h / 2) - sc(1)
+        -- 고리 (몸통 위, 테두리만)
+        self:drawRectBorder(cx - sc(4), bodyY - sc(7), sc(8), sc(8), 0.95, 0.95, 0.85, 0.4)
+        -- 몸통 (채움)
+        self:drawRect(cx - math.floor(bodyW / 2), bodyY, bodyW, bodyH, 0.95, 0.95, 0.85, 0.4)
+        self:drawRectBorder(0, 0, w, h, 0.7, col[1], col[2], col[3])
+    elseif e.counting then
         -- 쿨다운 오버레이: 남은 비율만큼 위에서 어둡게 덮고, 시간이 지날수록
         -- 아래에서부터 원래 색이 드러난다 (게이지 아이콘처럼 슬롯 자체가 진행바 역할).
         local overlayH = math.floor(h * prog)
@@ -207,18 +223,30 @@ function DonationEntryPanel:render()
             self:drawRect(0, 0, w, overlayH, 0.55, 0, 0, 0)
         end
         self:drawRectBorder(0, 0, w, h, 0.9, col[1], col[2], col[3])
-        -- 카운트다운 숫자 (오버레이 위에도 항상 보이도록 마지막에 그림)
-        self:drawTextCentre(tostring(secs), w / 2, h / 2 - sc(6), 1, 0.95, 0.35, 1, UIFont.Medium)
     else
-        -- 대기 슬롯: 아직 시작 안 함 -- 전체를 어둡게 덮고 "대기중"만 표시,
-        -- 카운트다운 숫자는 안 보여준다 (진짜로 안 세고 있으니까).
+        -- 대기 슬롯: 직렬 레인에서 자기 차례를 기다리는 중 (카운트다운 정지 상태).
         self:drawRect(0, 0, w, h, 0.6, 0, 0, 0)
         self:drawRectBorder(0, 0, w, h, 0.5, col[1], col[2], col[3])
-        self:drawTextCentre("대기중", w / 2, h / 2 - sc(6), 0.75, 0.75, 0.75, 1, UIFont.Small)
     end
 
-    -- close (우상단 작은 히트영역)
-    self:drawText("x", w - sc(11), sc(1), 0.7, 0.7, 0.7, 0.8, UIFont.Small)
+    -- 스택 개수 (좌하단, 참고 이미지 스타일). 진행 상황은 오버레이가 보여주니
+    -- 숫자는 "같은 효과가 몇 개 쌓여있는지"에만 씀.
+    self:drawText(tostring(e.stack or 1), sc(3), h - sc(16), 1, 0.95, 0.35, 1, UIFont.Medium)
+
+    -- 마우스 호버 중일 때만 이 슬롯이 무슨 효과인지 슬롯 위에 툴팁으로 표시.
+    -- 텍스트는 IG_UI_KO.txt 번역 키(labelKey/getText) 기반 순수 효과 이름만 씀
+    -- (entry.label은 백신처럼 후원 메시지가 붙을 수 있어서 툴팁엔 안 맞음).
+    if self:isMouseOver() then
+        local label = effectName(e.featureId)
+        local tw = getTextManager():MeasureStringX(UIFont.Small, label)
+        local boxW = tw + sc(10)
+        local boxH = sc(16)
+        local tx = math.floor(w / 2 - boxW / 2)
+        local ty = -boxH - sc(4)
+        self:drawRect(tx, ty, boxW, boxH, 0.9, 0.05, 0.05, 0.05)
+        self:drawRectBorder(tx, ty, boxW, boxH, 0.8, col[1], col[2], col[3])
+        self:drawTextCentre(label, w / 2, ty + sc(3), col[1], col[2], col[3], 1, UIFont.Small)
+    end
 
     ISPanel.render(self)
 end
@@ -226,14 +254,9 @@ end
 function DonationEntryPanel:update() end
 
 -- Drag: moving ANY panel moves the whole stack anchor (persisted on release).
--- Close: X in the top-right corner hides THIS panel only -- the countdown keeps
--- running invisibly, so the donation effect still fires on schedule.
+-- 큐박스에 들어온 도네는 닫기 불가 -- 드래그로 위치만 옮길 수 있음.
 function DonationEntryPanel:onMouseDown(x, y)
     if not self:getIsVisible() then return end
-    if x >= self.width - sc(BASE_CLOSE_W) and y <= sc(BASE_CLOSE_W) then
-        removePanel(self.entry)
-        return true
-    end
     self.dragging = true
     self:bringToTop()
     return true
@@ -265,6 +288,33 @@ DonationEntryPanel.onMouseUpOutside = DonationEntryPanel.onMouseUp
 -- ── Panel stack ───────────────────────────────────────────────────────────────
 -- 슬롯 1(가장 오래된 항목)이 앵커에 고정되고, 새 항목이 들어올수록 왼쪽으로
 -- 다다다 늘어난다. anchorX/anchorY는 "슬롯 1의 좌상단" 좌표로 취급.
+-- 드래그로 위치를 옮긴 적 없을 때(anchorX == nil) 쓰는 기본 위치.
+-- 좌우는 화면 우측, 높이는 화면 세로 정중앙. 단, 그 위치가 무들 표시 영역과
+-- 겹치면 무들 아래로 피해서 배치한다.
+local function getMoodlesInstance()
+    return MoodlesUI.getInstance()
+end
+
+local function defaultAnchor(sz)
+    local sw = getCore():getScreenWidth()
+    local sh = getCore():getScreenHeight()
+    local x0 = sw - BASE_PAD_X - sz
+    local y0 = math.floor(sh / 2 - sz / 2)   -- 화면 세로 정중앙
+
+    -- 무들 패널의 x/y/width/height는 활성 무들 개수와 무관하게 고정된 값
+    -- (바닐라 MoodlesUI는 항상 같은 영역을 씀, 무들이 없을 때만 안 보일 뿐).
+    -- 그래서 isVisible() 여부와 상관없이 "무들이 차지할 수 있는 영역"을
+    -- 항상 피해야 한다 -- 지금 안 보인다고 방심하면 무들 뜨는 순간 가려짐.
+    local ok, moodle = pcall(getMoodlesInstance)
+    if ok and moodle then
+        local my, mh = moodle:getY(), moodle:getHeight()
+        if my and mh and y0 < my + mh and y0 + sz > my then
+            y0 = my + mh + sc(10)   -- 무들 영역과 겹치면 그 아래로 피함
+        end
+    end
+    return x0, y0
+end
+
 repositionPanels = function()
     local sw  = getCore():getScreenWidth()
     local sh  = getCore():getScreenHeight()
@@ -273,7 +323,7 @@ repositionPanels = function()
     if uiSettings.anchorX ~= nil then
         x0, y0 = uiSettings.anchorX, uiSettings.anchorY
     else
-        x0, y0 = sw - BASE_PAD_X - sz, sh - BASE_PAD_Y - sz
+        x0, y0 = defaultAnchor(sz)
     end
     -- keep the stack on screen (resolution change / bad ini values)
     x0 = math.max(0, math.min(x0, sw - sz))
@@ -416,6 +466,12 @@ end
 -- 매핑을 보고 rewards.txt에 같이 실어 보낸다).
 -- Prep countdown duration = sandbox Hitmans.Donation_PrepDelay (0..10s).
 -- 0초면 준비 패널을 아예 안 띄우고 즉시 발동 (확인 패널은 그대로 5초).
+-- ── Apply one donation locally (slot + reward) ────────────────────────────────
+-- amount는 통계/로그용, featureId가 실제 디스패치 키 (퍼펫 API가 amount->featureId
+-- 매핑을 보고 rewards.txt에 같이 실어 보낸다).
+-- 여기서는 큐박스 슬롯 등록만 한다. 카운트다운 / 안전지대 락 / 실제 발동은 전부
+-- onTick이 처리 (슬롯별로 독립 진행되므로 슬롯 생성 시점엔 아무것도 발동 안 함).
+-- Prep countdown duration = sandbox Hitmans.Donation_PrepDelay (0..10s).
 local function applyDonation(amount, featureId, sender, message)
     amount    = tostring(amount or "")
     featureId = tostring(featureId or "")
@@ -423,40 +479,16 @@ local function applyDonation(amount, featureId, sender, message)
     local entry = {
         label        = buildLabel(featureId, sender, message),
         sender       = sender,
+        senders      = { sender },   -- 같은 featureId가 뒤이어 들어오면 여기 계속 쌓임 (스택)
+        stack        = 1,
         remaining_ms = prepMs,
-        duration_ms  = prepMs,   -- render progress bar denominator (prep phase)
+        duration_ms  = prepMs,   -- 유닛 1개 발동 간격 (스택 소모 주기로도 재사용)
         amount       = amount,
         featureId    = featureId,
-        applied      = false,   -- false = prep countdown running; true = effect already fired
+        locked       = false,    -- onTick이 매 틱 갱신 (안전지대 && zone-blocked 타입)
+        parallel     = false,    -- 락에서 풀려나면 true로 승격 -> 직렬 순서 무시하고 병렬 소모
+        counting     = false,    -- onTick이 갱신: 지금 실제로 카운트다운 중인지 (render 표시용)
     }
-    -- Fired by onTick when the prep countdown reaches 0 -- the slot is already
-    -- freed by that point (see onTick), so the next queued donation can slide
-    -- in immediately. rewardManager.a's own processingEvent flag still governs
-    -- its internal safe-zone-wait retries, but no longer gates this file's queue
-    -- (see consumeDonationQueue / MAX_QUEUE_SLOTS). If the player is standing in
-    -- a safe zone, rewardManager.a's callback below re-shows this same panel
-    -- every ~5s as a "still waiting to leave the safe zone" indicator until the
-    -- effect actually fires.
-    entry.fire = function()
-        rewardManager.a(entry.featureId, entry.sender, function()
-            removePanel(entry)
-            entry.remaining_ms = PANEL_DURATION_MS
-            entry.duration_ms  = PANEL_DURATION_MS
-            local found = false
-            for _, e in ipairs(activeEntries) do if e == entry then found = true break end end
-            -- 맨 앞(활성 슬롯)에 다시 꽂는다 -- 이건 새 대기열 항목이 아니라
-            -- "안전지대 벗어날 때까지 대기 중"인 기존 항목의 연장이라, 뒤로
-            -- 밀리면 다른 대기 항목들에 가려서 재확인이 영영 안 될 수 있음.
-            if not found then table.insert(activeEntries, 1, entry) end
-            addPanel(entry)
-        end)
-    end
-    global.processingEvent = true   -- hold the queue through prep countdown + effect
-    if prepMs <= 0 then
-        entry.applied = true        -- 대기 0초: 준비 카운트다운/패널 생략, 즉시 발동
-        entry.fire()                -- 콜백이 activeEntries 등록 + 확인 패널 표시까지 처리
-        return
-    end
     table.insert(activeEntries, entry)
     addPanel(entry)
 end
@@ -515,15 +547,34 @@ local function pollDonationFile()
     end
 end
 
-local MAX_QUEUE_SLOTS = 5   -- 도네큐박스 최대 슬롯 수. 5개는 각자 독립적으로 카운트다운.
+local MAX_QUEUE_SLOTS = 5   -- 도네큐박스 최대 슬롯 수. 슬롯들은 서로 병렬로 진행된다.
 
--- Drain the queue as long as the queue box has a free slot. Multiple donations
--- can now count down (and fire) concurrently -- a slot frees the instant its
--- own countdown hits 0, and the next waiting donation slides in immediately.
+-- 같은 featureId 슬롯이 이미 큐박스에 있으면 새 슬롯을 만들지 않고 그 스택에
+-- 합친다 -- 같은 효과가 몇 개가 들어오든 슬롯 1칸에 숫자만 쌓임 (뛰좀 6개 -> x6).
+local function tryMergeIntoSlot(item)
+    for _, e in ipairs(activeEntries) do
+        if e.featureId == item.featureId then
+            e.stack = e.stack + 1
+            table.insert(e.senders, item.sender)
+            return true
+        end
+    end
+    return false
+end
+
+-- 큐박스에 빈 슬롯이 있는 동안 계속 채운다. 이미 슬롯이 있는 타입은 슬롯을
+-- 새로 안 쓰고 병합되므로, 큐박스가 꽉 찼어도 기존 타입은 계속 흡수된다.
 local function consumeDonationQueue()
-    while #activeEntries < MAX_QUEUE_SLOTS and #donationQueue > 0 do
-        local entry = table.remove(donationQueue, 1)
-        applyDonation(entry.amount, entry.featureId, entry.sender, entry.message)
+    while #donationQueue > 0 do
+        local item = donationQueue[1]
+        if tryMergeIntoSlot(item) then
+            table.remove(donationQueue, 1)
+        elseif #activeEntries < MAX_QUEUE_SLOTS then
+            table.remove(donationQueue, 1)
+            applyDonation(item.amount, item.featureId, item.sender, item.message)
+        else
+            break   -- 큐박스 꽉 참, 새 타입은 자리 날 때까지 대기
+        end
     end
 end
 
@@ -542,25 +593,58 @@ Events.OnServerCommand.Add(onServerCommand)
 -- ── OnTick: countdown + queues ────────────────────────────────────────────────
 local function onTick()
     local dt = getGameTime():getTimeDelta() * 1000
-    -- 큐박스에서 실제로 카운트다운하는 건 맨 앞(= 화면 우하단 앵커, 가장 먼저
-    -- 들어온) 슬롯 하나뿐. 나머지는 자기 차례가 될 때까지 대기 상태로 그대로 있음
-    -- (remaining_ms를 안 건드리니 값이 원본 그대로 유지됨).
-    local head = activeEntries[1]
-    local fired = nil
-    if head then
-        head.remaining_ms = head.remaining_ms - dt
-        if head.remaining_ms <= 0 then
-            removePanel(head)
-            table.remove(activeEntries, 1)   -- 뒤에 있던 항목들이 한 칸씩 당겨짐
-            if not head.applied then
-                head.applied = true   -- prep countdown finished: fire the effect now
-                fired = head
+    -- 기본은 원래대로 직렬: 큐박스에서 실제로 카운트다운하는 건 "직렬 헤드"
+    -- (락도 아니고 병렬도 아닌 슬롯 중 가장 앞) 하나뿐이고, 나머지는 자기
+    -- 차례를 기다린다.
+    -- 예외는 안전지대 락에서 풀려난 슬롯들: 락이 해제되는 순간 병렬 레인으로
+    -- 넘어가서 서로(그리고 직렬 헤드와도) 동시에 카운트다운/발동된다.
+    -- (특좀 x3 + 뛰좀 x2 락 해제 -> 첫 주기에 특좀1+뛰좀1 동시 발동, 특좀 x2/뛰좀 x1 잔류.
+    --  같은 타입 스택은 병렬이어도 슬롯 안에서 duration_ms 간격으로 하나씩만 소모.)
+    local player = getPlayer()
+    local inSafeZone = player ~= nil and zone.a(player)
+
+    -- 1) 락 상태 갱신 + 락 해제 감지 (락이었다가 풀린 슬롯만 병렬로 승격)
+    for _, e in ipairs(activeEntries) do
+        local nowLocked = inSafeZone and rewardManager.isZoneBlocked(e.featureId)
+        if e.locked and not nowLocked then
+            e.parallel = true   -- 안전지대에서 쌓여있다 풀려난 슬롯: 병렬 소모
+        end
+        e.locked = nowLocked
+    end
+
+    -- 2) 직렬 헤드 선정: 락/병렬이 아닌 슬롯 중 가장 앞
+    local serialHead = nil
+    for _, e in ipairs(activeEntries) do
+        if not e.locked and not e.parallel then serialHead = e break end
+    end
+
+    -- 3) 카운트다운/발동. counting 플래그는 render()가 진행/대기 표시 구분에 씀.
+    for i = #activeEntries, 1, -1 do
+        local e = activeEntries[i]
+        e.counting = (not e.locked) and (e.parallel or e == serialHead)
+        if e.counting then
+            e.remaining_ms = e.remaining_ms - dt
+            if e.remaining_ms <= 0 then
+                -- 유닛 1개 발동. 방금 락 아님을 확인했으므로 rewardManager.a는
+                -- 내부 안전지대 대기 없이 즉시 경로를 탄다 (같은 틱에 재진입하는
+                -- 극단적 레이스는 rewardManager.a 자체 재확인 루프가 흡수).
+                local unitSender = table.remove(e.senders, 1) or e.sender
+                rewardManager.a(e.featureId, unitSender, nil)
+                e.stack = e.stack - 1
+                if e.stack <= 0 then
+                    removePanel(e)
+                    table.remove(activeEntries, i)
+                else
+                    e.remaining_ms = e.duration_ms   -- 다음 유닛까지 대기시간 재시작
+                end
             end
         end
     end
-    -- Fire after touching the list so the reward callback's panel/queue
-    -- mutations don't run mid-iteration.
-    if fired then fired.fire() end
+    -- 드래그로 위치를 커스텀한 적 없으면(anchorX == nil) 미니맵을 계속 따라가도록
+    -- 매 틱 재배치 (인벤토리 열림/미니맵 토글 등으로 미니맵이 움직일 수 있음).
+    if uiSettings.anchorX == nil and #panelList > 0 then
+        repositionPanels()
+    end
     if bandit then bandit.b() end
     if zombie then zombie.a() end
     pollDonationFile()

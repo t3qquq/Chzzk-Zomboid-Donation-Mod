@@ -220,6 +220,13 @@ function rewardManager.isValid(featureId)
     return rewardHandlers[featureId] ~= nil
 end
 
+-- isZoneBlocked(featureId) -> true면 안전지대 안에서는 발동 불가(immediate=false).
+-- 도네큐박스가 슬롯에 자물쇠(락) 표시를 할지 판단할 때 쓴다.
+function rewardManager.isZoneBlocked(featureId)
+    local entry = rewardHandlers[featureId]
+    return entry ~= nil and entry.immediate ~= true
+end
+
 -- applyReward(featureId, sender, callback)  [public name: .a]
 -- immediate=true 기능은 안전지대 안에서도 즉시 발동 (zombie_roulette / sprinter5 /
 -- mutant_spawn 제외 전부). 이 3개만 플레이어가 안전지대를 벗어날 때까지 대기 (5초마다 재확인).
