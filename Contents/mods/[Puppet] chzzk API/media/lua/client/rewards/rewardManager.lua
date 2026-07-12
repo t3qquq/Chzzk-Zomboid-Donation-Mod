@@ -130,7 +130,7 @@ local rewardHandlers = {
         fn = function()
             global.b(" DONATION EXPLOSION START")
             getSoundManager():PlaySound("alert", false, 1.0)
-            sendClientCommand("Schedule", "PlayAlert", {
+            sendClientCommand("PongDuDonation", "PlayAlert", {
                 ["x"] = global.player:getX(),
                 ["y"] = global.player:getY(),
                 ["r"] = 40,

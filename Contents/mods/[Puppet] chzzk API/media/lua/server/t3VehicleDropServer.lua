@@ -2,7 +2,7 @@
 if not isServer() then return end
 
 Events.OnClientCommand.Add(function(module, command, player, args)
-    if module ~= "t3VehicleDrop" then return end
+    if module ~= "PongDuVehicleDrop" then return end
     if command == "SpawnVehicleDrop" then
         t3VehicleDrop.spawnVehicle(player, args.x, args.y, args.z, args.vehicleType, args.sender)
     end

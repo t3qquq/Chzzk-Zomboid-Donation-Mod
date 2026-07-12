@@ -76,7 +76,7 @@ end
 
 
 function Hitman.ForceSyncPart(zombie, syncData)
-    sendClientCommand(getSpecificPlayer(0), 't3_Commands', 'HitmanUpdatePart', syncData)
+    sendClientCommand(getSpecificPlayer(0), 'Hitman_Commands', 'HitmanUpdatePart', syncData)
 end
 
 function Hitman.AddTask(zombie, task)
@@ -347,7 +347,7 @@ function Hitman.SetMaster(zombie, master)
     if brain then
         brain.master = master
         -- HitmanBrain.Update(zombie, brain)
-        -- sendClientCommand(getPlayer(), 't3_Commands', 'HitmanUpdate', brain)
+        -- sendClientCommand(getPlayer(), 'Hitman_Commands', 'HitmanUpdate', brain)
     end
 end
 
@@ -368,7 +368,7 @@ function Hitman.SetProgram(zombie, program, programParams)
 
         -- HitmanBrain.Update(zombie, brain)
     end
-    -- sendClientCommand(getPlayer(), 't3_Commands', 'HitmanUpdate', brain)
+    -- sendClientCommand(getPlayer(), 'Hitman_Commands', 'HitmanUpdate', brain)
 end
 
 function Hitman.SetProgramStage(zombie, stage)
@@ -377,7 +377,7 @@ function Hitman.SetProgramStage(zombie, stage)
         brain.program.stage = stage
         -- HitmanBrain.Update(zombie, brain)
     end
-    -- sendClientCommand(getPlayer(), 't3_Commands', 'HitmanUpdate', brain)
+    -- sendClientCommand(getPlayer(), 'Hitman_Commands', 'HitmanUpdate', brain)
 end
 
 -- Hitman hostility
@@ -498,7 +498,7 @@ function Hitman.SetWeapons(zombie, weapons)
         brain.weapons = weapons
         -- HitmanBrain.Update(zombie, brain)
         Hitman.UpdateItemsToSpawnAtDeath(zombie)
-        -- sendClientCommand(getPlayer(), 't3_Commands', 'HitmanUpdate', brain)
+        -- sendClientCommand(getPlayer(), 'Hitman_Commands', 'HitmanUpdate', brain)
     end
 end
 

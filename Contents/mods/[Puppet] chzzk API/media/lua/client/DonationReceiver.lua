@@ -39,7 +39,7 @@ end
 -- ── Panel layout ──────────────────────────────────────────────────────────────
 -- PANEL_DURATION_MS is now ONLY the "applied" confirmation duration (fixed 5s).
 -- The prep countdown before the effect fires comes from the sandbox option
--- Hitmans.Donation_PrepDelay (0..10s) -- see prepDurationMs().
+-- PongDu.Donation_PrepDelay (0..10s) -- see prepDurationMs().
 local PANEL_DURATION_MS = 5000
 
 -- 쿨다운 아이콘 슬롯 레이아웃 (우하단 앵커, 옆으로 다다다 늘어남).
@@ -56,13 +56,13 @@ end
 -- ── Sandbox options (server-wide) ─────────────────────────────────────────────
 -- Read at use time (SandboxVars is not populated at file-load time).
 local function showPanelEnabled()
-    local sv = SandboxVars and SandboxVars.Hitmans
+    local sv = SandboxVars and SandboxVars.PongDu
     if sv and sv.Donation_ShowPanel == false then return false end
     return true      -- option missing (old save) -> default: show
 end
 
 local function prepDurationMs()
-    local sv = SandboxVars and SandboxVars.Hitmans
+    local sv = SandboxVars and SandboxVars.PongDu
     local s = sv and tonumber(sv.Donation_PrepDelay)
     if s == nil then s = 5 end
     if s < 0 then s = 0 elseif s > 10 then s = 10 end
@@ -470,14 +470,14 @@ end
 -- ── Apply one donation locally (panel + reward) ──────────────────────────────
 -- amount는 통계/로그용, featureId가 실제 디스패치 키 (퍼펫 API가 amount->featureId
 -- 매핑을 보고 rewards.txt에 같이 실어 보낸다).
--- Prep countdown duration = sandbox Hitmans.Donation_PrepDelay (0..10s).
+-- Prep countdown duration = sandbox PongDu.Donation_PrepDelay (0..10s).
 -- 0초면 준비 패널을 아예 안 띄우고 즉시 발동 (확인 패널은 그대로 5초).
 -- ── Apply one donation locally (slot + reward) ────────────────────────────────
 -- amount는 통계/로그용, featureId가 실제 디스패치 키 (퍼펫 API가 amount->featureId
 -- 매핑을 보고 rewards.txt에 같이 실어 보낸다).
 -- 여기서는 큐박스 슬롯 등록만 한다. 카운트다운 / 안전지대 락 / 실제 발동은 전부
 -- onTick이 처리 (슬롯별로 독립 진행되므로 슬롯 생성 시점엔 아무것도 발동 안 함).
--- Prep countdown duration = sandbox Hitmans.Donation_PrepDelay (0..10s).
+-- Prep countdown duration = sandbox PongDu.Donation_PrepDelay (0..10s).
 local function applyDonation(amount, featureId, sender, message)
     amount    = tostring(amount or "")
     featureId = tostring(featureId or "")
@@ -591,7 +591,7 @@ local function pollDonationFile()
             featureId = featureId or ""
             -- Stats: forward the raw line to the host for aggregation (ALL donations,
             -- valid or not -- the Python report decides what to count).
-            sendClientCommand("DonationStats", "Record", { line = raw })
+            sendClientCommand("PongDuStats", "Record", { line = raw })
             -- Effect: only queue valid featureIds (unmapped amounts do nothing in-game).
             if rewardManager.isValid(featureId) then
                 table.insert(donationQueue, {
@@ -637,9 +637,17 @@ local function consumeDonationQueue()
     end
 end
 
--- Kept as a harmless fallback if a server ever pushes Donation/Apply directly.
+-- PongDuDonation module receiver:
+--  * PlayAlert -- server relays a donation alert sound to nearby clients
+--    (sent by rewardManager missile / features/riseup; relay in server.lua).
+--  * Apply -- harmless fallback if a server ever pushes a donation directly.
 local function onServerCommand(module, command, data)
-    if module ~= "Donation" or command ~= "Apply" then return end
+    if module ~= "PongDuDonation" then return end
+    if command == "PlayAlert" then
+        getSoundManager():PlaySound("alert", false, 1.0)
+        return
+    end
+    if command ~= "Apply" then return end
     applyDonation(
         tostring(data.amount or ""),
         tostring(data.featureId or ""),

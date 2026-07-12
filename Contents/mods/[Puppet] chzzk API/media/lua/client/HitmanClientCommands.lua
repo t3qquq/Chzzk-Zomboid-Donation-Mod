@@ -1,7 +1,7 @@
 HitmanZSClient = HitmanZSClient or {}
-HitmanZSClient.t3_Commands = {}
+HitmanZSClient.Hitman_Commands = {}
 
-HitmanZSClient.t3_Commands.UpdateVehicle = function(args)
+HitmanZSClient.Hitman_Commands.UpdateVehicle = function(args)
     for i=0, 100 do
         local vehicleList = getCell():getVehicles()
         for i=0, vehicleList:size()-1 do
@@ -26,7 +26,7 @@ HitmanZSClient.t3_Commands.UpdateVehicle = function(args)
     end
 end
 
-HitmanZSClient.t3_Commands.UpdateHitmanPart = function(args)
+HitmanZSClient.Hitman_Commands.UpdateHitmanPart = function(args)
     local id = args.id
     if id then
         local hitman = HitmanZombie.Cache[id]
@@ -50,7 +50,7 @@ HitmanZSClient.t3_Commands.UpdateHitmanPart = function(args)
     end
 end
 
-HitmanZSClient.t3_Commands.UpdateHealth  = function(args)
+HitmanZSClient.Hitman_Commands.UpdateHealth  = function(args)
     local id = args.id
     if id then
         local zombie = HitmanZombie.Cache[id]
@@ -64,13 +64,13 @@ HitmanZSClient.t3_Commands.UpdateHealth  = function(args)
     end
 end
 
-HitmanZSClient.t3_Commands.SendCustomToClients = function(args)
+HitmanZSClient.Hitman_Commands.SendCustomToClients = function(args)
     HitmanCustom.hitmanData = args.hitmanData
     HitmanCustom.clanData = args.clanData
     HitmanCustom.Save()
 end
 
-HitmanZSClient.t3_Commands.SetMarker  = function(args)
+HitmanZSClient.Hitman_Commands.SetMarker  = function(args)
     HitmanEventMarkerHandler.set(getRandomUUID(), args.icon, args.time, args.x, args.y, args.color, args.desc)
 end
 

@@ -41,10 +41,8 @@ local function makeSprinter(a)
     getSandboxOptions():set("ZombieLore.Speed", b)
     a:getModData()["isSprinter"] = true
     registerMutant(a, "sprinter")     -- 부활 유지용 영속 등록
-    sendClientCommand("SpawnedSprinter", "isSprinter", {
-        ["isSprinter"] = true,
-        ["zedId"]      = a:getOnlineID(),
-    })
+    -- (구 "SpawnedSprinter" 송신은 수신처가 없는 죽은 코드라 제거.
+    --  이름표/스탯 적용은 아래 PongDuMutant/MutantMark 브로드캐스트가 담당.)
 end
 
 -- Spawn zombies at (x,y,z), with optional sprinter/sender settings.
@@ -96,7 +94,7 @@ local function spawnZombies(x, y, z, amount, useHighStats, sprint, sender)
                 end
                 -- 특좀과 동일하게 MutantMark 브로드캐스트 -> 소환 즉시 클라가
                 -- "누구의 스프린터" 이름표를 표시(부활 때만 뜨던 것을 스폰부터).
-                sendServerCommand("PEvents", "MutantMark", {
+                sendServerCommand("PongDuMutant", "MutantMark", {
                     ["zedId"]  = zsp:getOnlineID(),
                     ["kind"]   = "sprinter",
                     ["sender"] = sender or "",
@@ -138,9 +136,9 @@ local function spawnSpecialZombie(x, y, z, kind, sender)
     end
     zed:transmitModData()
     -- 서버발 zombie transmitModData는 클라에 전달이 안 되므로(스프린터의
-    -- SpawnedSprinter 죽은 코드와 같은 함정) 폭격과 동일한 검증된 채널로
+    -- 구 SpawnedSprinter 죽은 코드와 같은 함정 -- 해당 송신은 제거됨) 폭격과 동일한 검증된 채널로
     -- 전 클라에 zedId+kind를 브로드캐스트 -> 클라 적용기가 onlineID로 매칭.
-    sendServerCommand("PEvents", "MutantMark", {
+    sendServerCommand("PongDuMutant", "MutantMark", {
         ["zedId"]  = zed:getOnlineID(),
         ["kind"]   = kind,
         ["sender"] = sender or "",
@@ -153,7 +151,7 @@ end
 -- 보고하면 레지스트리에 추가 -> 다음 사망->부활 사이클도 자동 유지된다.
 -- 여러 클라가 중복 보고해도 멱등 (값 같으면 transmit 생략).
 Events.OnClientCommand.Add(function(module, command, player, data)
-    if module == "PEvents" and command == "MutantReregister" then
+    if module == "PongDuMutant" and command == "MutantReregister" then
         local key    = tostring(data and data["key"] or "")
         local kind   = data and data["kind"]
         local sender = data and data["sender"]
@@ -168,14 +166,14 @@ Events.OnClientCommand.Add(function(module, command, player, data)
     end
 end)
 
--- Handle "PEvents / ZedSpawn" client command.
+-- Handle "PongDuZombie / ZedSpawn" client command.
 local function srvlog(msg)
     local w = getFileWriter("server_log.txt", true, true)
     if w then w:write(os.date("%Y-%m-%d %H:%M:%S") .. " - " .. tostring(msg) .. "\n") w:close() end
 end
 
 local function onClientCommand(module, command, player, data)
-    if module == "PEvents" and command == "ZedSpawn" then
+    if module == "PongDuZombie" and command == "ZedSpawn" then
         srvlog("ZedSpawn RECEIVED on server")
         local offsetX = ZombRand(-4, 4)
         local offsetY = ZombRand(-4, 4)
@@ -194,7 +192,7 @@ local function onClientCommand(module, command, player, data)
         end)
         if ok then srvlog("spawnZombies OK")
         else srvlog("spawnZombies ERROR: " .. tostring(err)) end
-    elseif module == "PEvents" and command == "MutantSpawn" then
+    elseif module == "PongDuMutant" and command == "MutantSpawn" then
         local x    = tonumber(data["ZedX"])
         local y    = tonumber(data["ZedY"])
         local z    = tonumber(data["ZedZ"]) or 0
@@ -213,9 +211,11 @@ Events.OnClientCommand.Add(onClientCommand)
 
 -- ── DOServer command handlers ─────────────────────────────────────────────────
 DOServer = DOServer or {}
-DOServer["Schedule"] = DOServer["Schedule"] or {}
+DOServer["PongDuBombard"]  = DOServer["PongDuBombard"]  or {}
+DOServer["PongDuRiseUp"]   = DOServer["PongDuRiseUp"]   or {}
+DOServer["PongDuDonation"] = DOServer["PongDuDonation"] or {}
 
-DOServer["Schedule"]["Kaboom"] = function(player, data)
+DOServer["PongDuBombard"]["Kaboom"] = function(player, data)
     local cx = player:getX()
     local cy = player:getY()
     local e  = player:getCell()
@@ -254,22 +254,22 @@ DOServer["Schedule"]["Kaboom"] = function(player, data)
     for i = 0, players:size() - 1 do
         local p = players:get(i)
         if p:getOnlineID() ~= player:getOnlineID() then
-            sendServerCommand(p, "Schedule", "NearbyExplosion", {x = cx, y = cy, r = r})
+            sendServerCommand(p, "PongDuBombard", "NearbyExplosion", {x = cx, y = cy, r = r})
         end
     end
 end
 
-DOServer["Schedule"]["PlayExplosion"] = function(player, data)
+DOServer["PongDuBombard"]["PlayExplosion"] = function(player, data)
     local players = getOnlinePlayers()
     for i = 0, players:size() - 1 do
         local p = players:get(i)
         if p:getOnlineID() ~= player:getOnlineID() then
-            sendServerCommand(p, "Schedule", "PlayExplosion", {})
+            sendServerCommand(p, "PongDuBombard", "PlayExplosion", {})
         end
     end
 end
 
-DOServer["Schedule"]["PlayAlert"] = function(player, data)
+DOServer["PongDuDonation"]["PlayAlert"] = function(player, data)
     local cx = tonumber(data["x"]) or player:getX()
     local cy = tonumber(data["y"]) or player:getY()
     local r  = tonumber(data["r"]) or 40
@@ -279,7 +279,7 @@ DOServer["Schedule"]["PlayAlert"] = function(player, data)
         if p:getOnlineID() ~= player:getOnlineID() then
             local dist = math.sqrt(math.pow(p:getX() - cx, 2) + math.pow(p:getY() - cy, 2))
             if dist < r then
-                sendServerCommand(p, "Schedule", "PlayAlert", {})
+                sendServerCommand(p, "PongDuDonation", "PlayAlert", {})
             end
         end
     end
@@ -296,7 +296,7 @@ local _deathMarks = {}
 local DEATHMARK_MS = 600000   -- 10분. 그 안에 강령술 안 하면 자연 소멸.
 
 Events.OnClientCommand.Add(function(module, command, player, data)
-    if module == "PEvents" and command == "MutantDeathMark" then
+    if module == "PongDuMutant" and command == "MutantDeathMark" then
         local x, y = tonumber(data and data["x"]), tonumber(data and data["y"])
         local kind = data and data["kind"]
         if x and y and kind then
@@ -363,7 +363,7 @@ local function findFreshZombie(sq, handled)
     return nil
 end
 
-DOServer["Schedule"]["RiseUp"] = function(player, data)
+DOServer["PongDuRiseUp"]["RiseUp"] = function(player, data)
     local cx = tonumber(data["x"]) or player:getX()
     local cy = tonumber(data["y"]) or player:getY()
     local r  = tonumber(data["r"]) or 55
@@ -445,7 +445,7 @@ DOServer["Schedule"]["RiseUp"] = function(player, data)
                                 end
                                 if kind then
                                     marked = marked + 1
-                                    sendServerCommand("PEvents", "MutantRevive", {
+                                    sendServerCommand("PongDuMutant", "MutantRevive", {
                                         ["x"]      = sq:getX(),
                                         ["y"]      = sq:getY(),
                                         ["z"]      = floor,
@@ -472,7 +472,7 @@ DOServer["Schedule"]["RiseUp"] = function(player, data)
     srvlog("RiseUp: " .. raised .. " corpses, " .. readable .. " death-mark hits, " .. marked .. " special marks, around " .. cx .. "," .. cy .. " r=" .. r)
     print("[PongDu][RiseUp] DONE raised=" .. raised .. " readable=" .. readable .. " marked=" .. marked)
     -- 요약을 클라에도 쏴서 client console.txt만으로 전 과정 관측 가능하게
-    sendServerCommand("PEvents", "MutantReviveDebug", {
+    sendServerCommand("PongDuMutant", "MutantReviveDebug", {
         ["total"] = raised, ["readable"] = readable, ["marked"] = marked,
     })
     -- 부활 예약 청소 스윕 예약 (아래 RiseSweep 참고). 부활 좀비들이 물고 있는
@@ -637,7 +637,7 @@ Events.OnClientCommand.Add(onClientCommandDOServer)
 -- Donation polling now happens CLIENT-SIDE (see DonationReceiver.lua). Each streamer's
 -- client reads its own rewards.txt and applies the effect to itself, so the
 -- server no longer reads donation_queue.txt or pushes Donation/Apply.
--- Zombie spawning (PEvents/ZedSpawn) and DOServer Schedule handlers above stay.
+-- Zombie spawning (PongDuZombie/ZedSpawn) and DOServer handlers above stay.
 
 -- ── Donation stats collector ─────────────────────────────────────────────────
 -- Each client forwards the raw donation lines it reads (DonationStats/Record).
@@ -649,7 +649,7 @@ Events.OnClientCommand.Add(onClientCommandDOServer)
 local PROFITS_FILE = "profits.txt"
 
 local function onDonationStats(module, command, player, data)
-    if module ~= "DonationStats" or command ~= "Record" then return end
+    if module ~= "PongDuStats" or command ~= "Record" then return end
     if not player or not data or not data.line then return end
     local streamer = player:getUsername() or "unknown"
     local w = getFileWriter(PROFITS_FILE, true, true)   -- create, append

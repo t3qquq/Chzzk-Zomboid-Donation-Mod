@@ -1,7 +1,7 @@
 -- t3VehicleDrop: vehicle_drop donation feature (vehicle_kit 스텁 대체).
 -- 후원 시 "vehicle_drop_kit" 아이템 지급 -> 플레이어가 우클릭으로 개봉(레시피)
 -- -> 이 파일의 OpenKit이 실행되어 플레이어 기준 가장 가까운 실외 타일을 찾고
--- 그 자리에 Donation_VehicleDropPool 목록 중 하나를 무작위로 소환한다.
+-- 그 자리에 VehicleDrop_Pool 목록 중 하나를 무작위로 소환한다.
 --
 -- 실제 addVehicleDebug 호출(t3VehicleDrop.spawnVehicle)은
 -- server/t3VehicleDropSpawner.lua 에 있다 (솔로/서버에서만 로드됨).
@@ -68,10 +68,10 @@ local function findDropSquare(player)
     return player:getCurrentSquare()
 end
 
--- Donation_VehicleDropPool ("Base.A;Base.B;Base.C") 파싱 후 무작위 선택.
+-- VehicleDrop_Pool ("Base.A;Base.B;Base.C") 파싱 후 무작위 선택.
 local function pickVehicleType()
-    local sv = SandboxVars and SandboxVars.Hitmans
-    local pool = sv and sv.Donation_VehicleDropPool
+    local sv = SandboxVars and SandboxVars.PongDu
+    local pool = sv and sv.VehicleDrop_Pool
 
     local list = {}
     if pool and pool ~= "" then
@@ -115,7 +115,7 @@ function t3VehicleDrop.OpenKit(items, result, player)
         t3VehicleDrop.spawnVehicle(player, sq:getX(), sq:getY(), sq:getZ(), vehicleType, donor)
     elseif isClient() then
         -- MP: 실제 소환은 서버 권한으로 처리
-        sendClientCommand("t3VehicleDrop", "SpawnVehicleDrop", {
+        sendClientCommand("PongDuVehicleDrop", "SpawnVehicleDrop", {
             x = sq:getX(), y = sq:getY(), z = sq:getZ(),
             vehicleType = vehicleType,
             sender = donor,

@@ -23,7 +23,7 @@ function _a.a()
         local x = player:getX() + zone.b()
         local y = player:getY() + zone.b()
         local z = player:getZ()
-        sendClientCommand("PEvents", "ZedSpawn", {
+        sendClientCommand("PongDuZombie", "ZedSpawn", {
             ["Etype"]  = "Spawn",
             ["ZedX"]   = x,
             ["ZedY"]   = y,

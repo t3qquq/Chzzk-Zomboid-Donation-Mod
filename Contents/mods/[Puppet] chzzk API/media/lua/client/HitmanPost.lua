@@ -2,11 +2,11 @@ HitmanPost = HitmanPost or {}
 
 function HitmanPost.GuardToggle(player, x, y, z)
     local args = {x=x, y=y, z=z, type="guard"}
-    sendClientCommand(player, 't3_Commands', 'PostToggle', args)
+    sendClientCommand(player, 'Hitman_Commands', 'PostToggle', args)
 end
 
 function HitmanPost.Update(player, post)
-    sendClientCommand(player, 't3_Commands', 'PostUpdate', post)
+    sendClientCommand(player, 'Hitman_Commands', 'PostUpdate', post)
 end
 
 function HitmanPost.At(character, ptype)

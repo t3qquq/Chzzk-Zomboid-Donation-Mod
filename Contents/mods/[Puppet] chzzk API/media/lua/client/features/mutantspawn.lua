@@ -61,7 +61,7 @@ function _a.a(sender)
     local player = getPlayer()
     if not player then return end
     local kind = KINDS[ZombRand(#KINDS) + 1]
-    sendClientCommand("PEvents", "MutantSpawn", {
+    sendClientCommand("PongDuMutant", "MutantSpawn", {
         ["ZedX"]   = player:getX() + zone.b(),
         ["ZedY"]   = player:getY() + zone.b(),
         ["ZedZ"]   = player:getZ(),
@@ -587,7 +587,7 @@ end
 
 -- ── 적용기 본체 ───────────────────────────────────────────────────────────────
 -- 서버발 zombie transmitModData는 클라이언트에 전달되지 않으므로, 서버가
--- sendServerCommand("PEvents","MutantMark")로 쏜 zedId+kind를 받아두고
+-- sendServerCommand("PongDuMutant","MutantMark")로 쏜 zedId+kind를 받아두고
 -- OnZombieUpdate에서 onlineID로 매칭한다 (폭격 NearbyExplosion과 같은 채널).
 -- modData 경로는 SP/호스트 겸용 폴백으로 유지.
 local _pending = {}   -- [onlineID] = { k=종류, s=후원자, e=만료시각(ms) }
@@ -643,7 +643,7 @@ local _reviveMarks = {}   -- { {x,y,z,kind,expire}, ... }
 local REVIVE_MARK_MS = 20000
 
 Events.OnServerCommand.Add(function(module, command, args)
-    if module ~= "PEvents" then return end
+    if module ~= "PongDuMutant" then return end
     if command == "MutantMark" then
         local zid  = args and tonumber(args["zedId"])
         local kind = args and args["kind"]
@@ -820,8 +820,8 @@ local _showTags = {}     -- [onlineID] = { zombie=, ttl=, tdo=TextDrawObject }
 -- 서버 샌드박스 스위치. 기존 Donation_ShowPanel/PrepDelay와 동일하게
 -- 사용 시점에 읽는다 (SandboxVars는 파일 로드 시점엔 비어있음).
 local function nameTagEnabled()
-    local sv = SandboxVars and SandboxVars.Hitmans
-    if sv and sv.Donation_MutantNameTag == false then return false end
+    local sv = SandboxVars and SandboxVars.PongDu
+    if sv and sv.Mutant_NameTag == false then return false end
     return true      -- 옵션 없음(구버전 세이브) -> 기본값: 표시
 end
 

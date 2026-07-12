@@ -1,14 +1,14 @@
 HitmanServer = HitmanServer or {}
-HitmanServer.t3_Players = {}
+HitmanServer.Hitman_Players = {}
 
-HitmanServer.t3_Players.PlayerUpdate = function(player, args)
+HitmanServer.Hitman_Players.PlayerUpdate = function(player, args)
     local gmd = GetHitmanModDataPlayers()
     local id = args.id
     gmd.OnlinePlayers[id] = args
 end
 
 local onClientCommand = function(module, command, player, args)
-    if module == "t3_Players" and HitmanServer[module] and HitmanServer[module][command] then
+    if module == "Hitman_Players" and HitmanServer[module] and HitmanServer[module][command] then
         local argStr = ""
         for k, v in pairs(args) do
             argStr = argStr .. " " .. k .. "=" .. tostring(v)

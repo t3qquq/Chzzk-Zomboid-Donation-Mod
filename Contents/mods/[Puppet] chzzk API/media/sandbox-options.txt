@@ -1,41 +1,41 @@
 VERSION = 1,
 
-/***** DONATION UI *****/
+/***** PONGDU (donation features) *****/
 
-option Hitmans.Donation_ShowPanel = {
+option PongDu.Donation_ShowPanel = {
     type = boolean, default = true,
-    page = Hitmans_Donation, translation = Hitmans_Donation_ShowPanel,
+    page = PongDu, translation = PongDu_Donation_ShowPanel,
 }
 
-option Hitmans.Donation_PrepDelay = {
+option PongDu.Donation_PrepDelay = {
     type = integer, min = 0, max = 10, default = 5,
-    page = Hitmans_Donation, translation = Hitmans_Donation_PrepDelay,
+    page = PongDu, translation = PongDu_Donation_PrepDelay,
 }
 
-option Hitmans.Donation_BombardDelay = {
+option PongDu.Bombard_Delay = {
     type = integer, min = 10, max = 300, default = 60,
-    page = Hitmans_Donation, translation = Hitmans_Donation_BombardDelay,
+    page = PongDu, translation = PongDu_Bombard_Delay,
 }
 
-option Hitmans.Donation_BombardRadius = {
+option PongDu.Bombard_Radius = {
     type = integer, min = 5, max = 60, default = 55,
-    page = Hitmans_Donation, translation = Hitmans_Donation_BombardRadius,
+    page = PongDu, translation = PongDu_Bombard_Radius,
 }
 
-option Hitmans.Donation_RiseUpRadius = {
+option PongDu.RiseUp_Radius = {
     type = integer, min = 5, max = 60, default = 55,
-    page = Hitmans_Donation, translation = Hitmans_Donation_RiseUpRadius,
+    page = PongDu, translation = PongDu_RiseUp_Radius,
 }
 
-option Hitmans.Donation_MutantNameTag = {
+option PongDu.Mutant_NameTag = {
     type = boolean, default = true,
-    page = Hitmans_Donation, translation = Hitmans_Donation_MutantNameTag,
+    page = PongDu, translation = PongDu_Mutant_NameTag,
 }
 
-option Hitmans.Donation_VehicleDropPool = {
+option PongDu.VehicleDrop_Pool = {
     type = string,
     default = Base.PickUpTruck;Base.PickUpTruckLights;Base.PickUpTruckLightsFire;Base.PickUpTruckMccoy;Base.PickUpVan;Base.PickUpVanLights;Base.PickUpVanLightsFire;Base.PickUpVanLightsPolice;Base.PickUpVanMccoy,
-    page = Hitmans_Donation, translation = Hitmans_Donation_VehicleDropPool,
+    page = PongDu, translation = PongDu_VehicleDrop_Pool,
 }
 
 

@@ -149,11 +149,11 @@ local function doExplosion(a, b, handler, afterExplode)
     DOTex.alpha = 2
     getSoundManager():PlaySound("day_one_kaboom", false, 1.0)
 
-    -- 폭격 전용 반경 (Donation_BombardRadius, 5~60, 기본 55). 부활 반경과는 별개 변수.
+    -- 폭격 전용 반경 (Bombard_Radius, 5~60, 기본 55). 부활 반경과는 별개 변수.
     -- SandboxVars는 파일 로드 시점엔 비어있을 수 있으므로 사용 시점에 읽는다.
-    local sv = SandboxVars and SandboxVars.Hitmans
-    local radius = (sv and tonumber(sv.Donation_BombardRadius)) or 55
-    sendClientCommand("Schedule", "Kaboom", {r = radius})
+    local sv = SandboxVars and SandboxVars.PongDu
+    local radius = (sv and tonumber(sv.Bombard_Radius)) or 55
+    sendClientCommand("PongDuBombard", "Kaboom", {r = radius})
 
     killZombiesAround(e, f, radius)
 
@@ -174,9 +174,9 @@ _a.b = function(a)
     end
 
     local function startBomb()
-        -- 대기시간: Donation_BombardDelay(초, 10~300, 기본 60) * 60틱. 없으면 config 기본값(3600틱).
-        local sv  = SandboxVars and SandboxVars.Hitmans
-        local sec = sv and tonumber(sv.Donation_BombardDelay)
+        -- 대기시간: Bombard_Delay(초, 10~300, 기본 60) * 60틱. 없으면 config 기본값(3600틱).
+        local sv  = SandboxVars and SandboxVars.PongDu
+        local sec = sv and tonumber(sv.Bombard_Delay)
         b.bombTimer         = sec and (sec * 60) or _b.KaboomTime
         b.timeBombActivated = true
 
@@ -186,7 +186,7 @@ _a.b = function(a)
                 b.bombTimer = b.bombTimer - 1
                 if b.bombTimer == 480 then
                     getSoundManager():PlaySound("explosion", false, 1.0)
-                    sendClientCommand("Schedule", "PlayExplosion", {})
+                    sendClientCommand("PongDuBombard", "PlayExplosion", {})
                 end
                 if b.bombTimer <= 0 then
                     b.bombTimer = 0
@@ -207,11 +207,9 @@ _a.b = function(a)
 end
 
 Events.OnServerCommand.Add(function(a, b, c)
-    if a == "Schedule" then
+    if a == "PongDuBombard" then
         if b == "PlayExplosion" then
             -- 예고음은 타이머 480틱 조건에서 재생됨
-        elseif b == "PlayAlert" then
-            getSoundManager():PlaySound("alert", false, 1.0)
         elseif b == "NearbyExplosion" then
             -- 서버가 전 클라에 브로드캐스트 (x/y/r 포함).
             -- 각 클라는 자기가 소유한 좀비를 반경 내에서 죽이고,
@@ -259,7 +257,7 @@ local function onTickRecovery()
                 b.bombTimer = b.bombTimer - 1
                 if b.bombTimer == 480 then
                     getSoundManager():PlaySound("explosion", false, 1.0)
-                    sendClientCommand("Schedule", "PlayExplosion", {})
+                    sendClientCommand("PongDuBombard", "PlayExplosion", {})
                 end
                 if b.bombTimer <= 0 then
                     b.bombTimer = 0

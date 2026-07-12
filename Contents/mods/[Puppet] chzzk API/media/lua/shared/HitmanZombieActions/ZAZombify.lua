@@ -17,9 +17,9 @@ HitmanZombieActions.Zombify.onComplete = function(zombie, task)
     local args = {}
     args.id = id
     if isClient() then
-        sendClientCommand(getSpecificPlayer(0), 't3_Commands', 'HitmanRemove', args)
+        sendClientCommand(getSpecificPlayer(0), 'Hitman_Commands', 'HitmanRemove', args)
     else
-        HitmanServer.t3_Commands.HitmanRemove(getSpecificPlayer(0), args)
+        HitmanServer.Hitman_Commands.HitmanRemove(getSpecificPlayer(0), args)
     end
     return true
 end

@@ -121,7 +121,7 @@ local UpdatePlayersOnline = function ()
         playerData.id = HitmanUtils.GetCharacterID(player)
         playerData.name = player:getDisplayName()
         playerData.isGhost = player:isGhostMode()
-        sendClientCommand(player, 't3_Players', 'PlayerUpdate', playerData)
+        sendClientCommand(player, 'Hitman_Players', 'PlayerUpdate', playerData)
     end
 end
 
@@ -181,7 +181,7 @@ local ResetHitmanKills = function(player)
     if isServer() then return end
     local args = {}
     args.id = 0
-	sendClientCommand(player, 't3_Commands', 'ResetHitmanKills', args)
+	sendClientCommand(player, 'Hitman_Commands', 'ResetHitmanKills', args)
 end
 
 local UpdateVisitedBuildings = function()
@@ -193,7 +193,7 @@ local UpdateVisitedBuildings = function()
         local bid = HitmanUtils.GetBuildingID(buildingDef)
         local wah = getGameTime():getWorldAgeHours()
         local args = {bid=bid, wah=wah}
-        sendClientCommand(player, 't3_Commands', 'UpdateVisitedBuilding', args)
+        sendClientCommand(player, 'Hitman_Commands', 'UpdateVisitedBuilding', args)
     end
 end
 
