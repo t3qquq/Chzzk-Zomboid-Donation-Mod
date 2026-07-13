@@ -204,6 +204,19 @@ local rewardHandlers = {
             global.processingEvent = false
         end,
     },
+    ["inv_save_ticket"] = {
+        immediate = true,
+        fn = function(sender)
+            -- 인벤세이브권: 소지한 채 사망(좀비화 포함)하면 자동 발동/소모되어
+            -- 사망 시점 인벤토리 전체를 리스폰 후 돌려받는다 (features/invsave.lua).
+            local item = global.player:getInventory():AddItem("t3chzzkDonation.inv_save_ticket")
+            if item then
+                item:setName((sender or "") .. "'s " .. item:getDisplayName())
+                item:getModData().t3Donor = sender or ""
+            end
+            global.processingEvent = false
+        end,
+    },
     ["mutant_spawn"] = {
         immediate = false,
         fn = function(sender)

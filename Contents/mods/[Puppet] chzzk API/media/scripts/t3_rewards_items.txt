@@ -229,5 +229,17 @@ item t3DeployedParachute
     WorldStaticModel    = t3DeployedParachute,
 }
 
+/* inv_save_ticket donation: 소지한 채 사망하면 자동 발동/소모되어
+   사망 시점 인벤토리를 리스폰 후 그대로 돌려받는다 (features/invsave.lua).
+   Type=Key로 만들어 차키처럼 무게 0 + 인벤토리 열쇠고리 탭에 자동 편입되게 함. */
+item inv_save_ticket
+{
+    DisplayCategory     = Key,
+    Weight              = 0,
+    Type                = Key,
+    DisplayName         = Inventory Insurance,
+    Icon                = Doodle,
+    Tooltip             = Tooltip_inv_save_ticket,
 }
 
+}
