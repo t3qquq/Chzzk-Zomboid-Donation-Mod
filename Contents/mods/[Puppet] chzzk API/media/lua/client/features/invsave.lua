@@ -9,8 +9,8 @@
 -- 사망 시퀀스 근거 (PZ 41.78.19, IsoPlayer.OnDeath / IsoGameCharacter.dropHandItems):
 --   dropHandItems()  ->  OnPlayerDeath 이벤트  ->  (나중에) becomeCorpse() -> 서버 전송
 --   1) 양손 아이템은 OnPlayerDeath "직전"에 이미 바닥 square에 떨어진다.
---      -> OnEquipPrimary/Secondary 로 추적해둔 레퍼런스를 사망 지점 바닥에서
---         정확히 매칭해 회수한다 (원래 바닥에 있던 남의 아이템은 건드리지 않음).
+--      -> 낙하 시 엔진이 발화하는 onItemFall 이벤트로 아이템을 기록해뒀다가
+--         사망 직전 1초 이내 낙하분만 회수한다 (남의 바닥 아이템은 안 건드림).
 --   2) 시체(IsoDeadBody)는 OnPlayerDeath "이후"에 만들어져 서버로 전송되므로,
 --      이벤트 안에서 인벤토리를 비우면 시체/좀비는 어디서나 빈손이 된다.
 --
@@ -31,23 +31,28 @@ local SEP          = "\t"
 local HEADER       = "PONGDU_INVSAVE_V1"
 local MAX_DEPTH    = 16
 
--- ── 손 아이템 추적 ─────────────────────────────────────────────────────────────
--- dropHandItems()가 OnPlayerDeath보다 먼저 실행되어 이 시점엔 이미 손이 비어있다.
--- 장비 이벤트로 마지막 양손 아이템 레퍼런스를 유지했다가 사망 지점 바닥에서
--- 오브젝트 동일성(==)으로 매칭해 회수한다.
-local lastPrimary, lastSecondary = nil, nil
+-- ── 손 아이템 낙하 기록 ─────────────────────────────────────────────────────────
+-- dropHandItems()/dropHeavyItems()는 아이템을 바닥에 놓을 때마다 onItemFall을
+-- 발화한다(엔진 내 발화 지점은 이 둘뿐 = 전부 비자발적 낙하). 낙하한 아이템과
+-- 시각을 기록해뒀다가, 사망 이벤트에서 "직전 1초 이내 낙하분"만 회수한다.
+-- 사망 시 dropHandItems -> OnPlayerDeath가 같은 호출 스택에서 연속 실행되므로
+-- 시간 필터만으로 정확히 특정된다. (생전에 넘어져 떨어뜨린 건 자연 제외)
+local FALL_WINDOW_MS = 1000
+local recentFalls = {}   -- { {item=InventoryItem, t=ms}, ... } 최근 8건 유지
 
-Events.OnEquipPrimary.Add(function(chr, item)
-    if chr and chr == getPlayer() then lastPrimary = item end
-end)
-Events.OnEquipSecondary.Add(function(chr, item)
-    if chr and chr == getPlayer() then lastSecondary = item end
+Events.onItemFall.Add(function(item)
+    if not item then return end
+    recentFalls[#recentFalls + 1] = { item = item, t = getTimestampMs() }
+    while #recentFalls > 8 do table.remove(recentFalls, 1) end
 end)
 
 -- ── 문자열 인코딩 (rewards.txt와 동일하게 URL 인코딩 계열) ───────────────────────
+-- 주의: Kahlua string.byte는 UTF-16 코드포인트를 반환하므로 (한글이면 >255)
+-- 전체 URL 인코딩은 %02X 포맷이 4자리로 넘쳐 복호화가 깨진다.
+-- 구분자로 쓰이는 구조 문자(전부 ASCII)만 이스케이프하고 나머지는 원문 유지.
 local function enc(s)
     s = tostring(s or "")
-    return (s:gsub("[^%w%-%._]", function(c)
+    return (s:gsub("[%%\t\r\n,=]", function(c)
         return string.format("%%%02X", string.byte(c))
     end))
 end
@@ -180,43 +185,32 @@ local function onPlayerDeath(player)
 
     local out = {}
 
-    -- 1) 직전에 바닥으로 떨어진 양손 아이템 회수 (dropHandItems와 동일하게
-    --    현재 z에서 아래로 내려가며 첫 solid floor square를 찾는다)
-    local hand = {}
-    if lastPrimary then hand[#hand + 1] = lastPrimary end
-    if lastSecondary and lastSecondary ~= lastPrimary then hand[#hand + 1] = lastSecondary end
-
-    if #hand > 0 then
-        local cell = getCell()
-        local px, py = math.floor(player:getX()), math.floor(player:getY())
-        local floorSq = nil
-        for zz = math.floor(player:getZ()), 0, -1 do
-            local sq = cell:getGridSquare(px, py, zz)
-            if sq and sq:TreatAsSolidFloor() then floorSq = sq break end
-        end
-        if floorSq then
-            local wobjs = floorSq:getWorldObjects()
-            local toRemove = {}
-            for i = 0, wobjs:size() - 1 do
-                local wo = wobjs:get(i)
-                local wit = wo:getItem()
-                for _, h in ipairs(hand) do
-                    if wit == h then
-                        serializeItem(wit, 0, nil, out)
-                        if instanceof(wit, "InventoryContainer") then
-                            serializeContainer(wit:getInventory(), 1, player, out)
-                        end
-                        toRemove[#toRemove + 1] = wo
-                        break
-                    end
-                end
+    -- 1) 사망 직전(1초 이내) onItemFall로 바닥에 떨어진 손 아이템 회수.
+    --    onItemFall 시점에 AddWorldInventoryItem이 setWorldItem을 이미 호출했으므로
+    --    item:getWorldItem()으로 월드 오브젝트를 직접 얻어 제거한다.
+    local now = getTimestampMs()
+    local done = {}
+    for _, rec in ipairs(recentFalls) do
+        if rec.item and (now - rec.t) <= FALL_WINDOW_MS then
+            local dup = false
+            for _, d in ipairs(done) do
+                if d == rec.item then dup = true break end
             end
-            for _, wo in ipairs(toRemove) do
-                floorSq:transmitRemoveItemFromSquare(wo)
+            if not dup then
+                done[#done + 1] = rec.item
+                serializeItem(rec.item, 0, nil, out)
+                if instanceof(rec.item, "InventoryContainer") then
+                    serializeContainer(rec.item:getInventory(), 1, player, out)
+                end
+                local wi = rec.item:getWorldItem()
+                if wi then
+                    local sq = wi:getSquare()
+                    if sq then sq:transmitRemoveItemFromSquare(wi) end
+                end
             end
         end
     end
-    lastPrimary, lastSecondary = nil, nil
+    recentFalls = {}
 
     -- 2) 본체 인벤토리 전체 스냅샷 (착용 부위 포함)
     serializeContainer(inv, 0, player, out)
@@ -348,6 +342,14 @@ end
 local function restoreSnapshot(lines)
     local player = getPlayer()
     if not player then return end
+
+    -- 새 캐릭터가 갖고 태어난 직업/기본 지급품을 전부 비운 뒤 복원한다.
+    -- (스폰 의류가 부위를 선점해 인벤에 잡동사니로 남는 문제 방지)
+    player:clearWornItems()
+    local attached = player:getAttachedItems()
+    if attached then attached:clear() end
+    player:getInventory():clear()
+
     local stack = {}
     stack[0] = player:getInventory()
     local restored = 0
