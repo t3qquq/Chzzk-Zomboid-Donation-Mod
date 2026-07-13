@@ -1,11 +1,15 @@
 local _a = {}
 require("ISUI/ISPanel")
 
--- ── 좀비 레인 (zombie_rain) 클라이언트 ────────────────────────────────────────
--- 역할 3가지:
+-- ── 좀비 레인 (zombie_rain) 클라이언트 ── [프로토타입: 런타임 스퀘어 생성] ─────
+-- 역할 4가지:
 --  ① 시작: 샌드박스 반경/스프린터비율을 읽어 서버에 세션 시작 요청
---  ② 남은시간 UI: 폭격 타이머와 동일 스타일의 30초 카운트다운 패널
---  ③ 착지 처리: 서버 RainMark(zedId+체력+스프린터)를 받아, 소유 좀비가
+--  ② 컬럼 준비: 서버 Prep(컬럼 좌표) 수신 시 z=1..dropZ 빈 스퀘어를 로컬 생성.
+--     클라 재생성 관문(NetworkZombieSimulator.parseZombie)이 "이 클라"의
+--     getGridSquare(realZ)를 보므로, 스퀘어가 없으면 서버 좀비가 아예 생성되지
+--     않는다. createNewGridSquare는 멱등(있으면 그대로 반환) -- 중복 안전.
+--  ③ 남은시간 UI: 폭격 타이머와 동일 스타일의 30초 카운트다운 패널
+--  ④ 착지 처리: 서버 RainMark(zedId+체력+스프린터)를 받아, 소유 좀비가
 --     착지(z<=0.05)하면 낙하 전 체력으로 원복 -> 낙하 부상 무효화.
 --     스프린터 플래그면 setWalkType 적용 (좀비는 클라 권한이라 클라 적용이 신뢰 경로).
 --
@@ -14,6 +18,10 @@ require("ISUI/ISPanel")
 -- 자연스러우므로 그대로 둔다. 착지 감지는 OnZombieUpdate가 아닌 좀비 리스트
 -- 스캔을 쓴다 -- OnZombieUpdate는 ZombieFallDownState(착지 넘어짐) 동안
 -- 발화가 배제되므로(IsoZombie:2096) 착지 직후를 놓칠 수 있다.
+--
+-- [알려진 엣지] 낙하 도중 뒤늦게 스트림인한 클라는 컬럼 청크가 로드 전이라
+-- 스퀘어 생성이 스킵될 수 있다 -> 해당 좀비는 착지(z=0) 후 패킷부터 정상
+-- 재생성된다 (일시적 비표시만 발생, 유실 아님).
 
 local RAIN_DURATION_TICKS = 30 * 60      -- 폭격 타이머와 동일: 1틱 = 1 감산
 local PENDING_MS          = 60000        -- RainMark 유효시간 (스트림아웃/원격 소유 잔여분 청소)
@@ -57,7 +65,43 @@ local _pendingCount = 0
 local _sweepAcc     = 0
 
 Events.OnServerCommand.Add(function(module, command, args)
-    if module ~= "PongDuRain" or command ~= "RainMark" then return end
+    if module ~= "PongDuRain" then return end
+
+    -- ── 컬럼 공중 스퀘어 생성 (서버 스폰 전 선행) ──
+    if command == "Prep" then
+        local cols = args and args["cols"]
+        if type(cols) ~= "table" then return end
+        local dropZ = tonumber(args["z"]) or 4
+        local cell  = getCell()
+        if not cell then return end
+        -- [계측] 클라 로컬 생성 소요시간 + 성공/스킵 카운트 (서버 로그와 대조용)
+        local t0 = getTimestampMs()
+        local created, reused, failed = 0, 0, 0
+        for _, c in pairs(cols) do
+            local x = c and tonumber(c["x"])
+            local y = c and tonumber(c["y"])
+            if x and y then
+                for zz = 1, dropZ do
+                    if cell:getGridSquare(x, y, zz) then
+                        reused = reused + 1
+                    else
+                        local ok = pcall(function() cell:createNewGridSquare(x, y, zz, true) end)
+                        if ok and cell:getGridSquare(x, y, zz) then
+                            created = created + 1
+                        else
+                            failed = failed + 1
+                        end
+                    end
+                end
+            end
+        end
+        print("[PongDuRain] client prep ms=" .. tostring(getTimestampMs() - t0)
+            .. " created=" .. tostring(created) .. " reused=" .. tostring(reused)
+            .. " failed=" .. tostring(failed))
+        return
+    end
+
+    if command ~= "RainMark" then return end
     local zeds = args and args["zeds"]
     if type(zeds) ~= "table" then return end
     local now = getTimestampMs()

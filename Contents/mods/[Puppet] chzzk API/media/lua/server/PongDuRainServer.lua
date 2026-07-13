@@ -1,36 +1,45 @@
--- ── 좀비 레인 (zombie_rain) 서버 ──────────────────────────────────────────────
--- 후원받은 플레이어 기준 반경(샌드박스 Rain_Radius, 기본 55) 안의 "건물이 없는"
--- 야외 스퀘어에 30초 동안 총 500마리를 60ms 간격으로 1마리씩 z=4(4층 높이)에
--- 스폰한다. 낙하는 엔진 물리가 그대로 처리한다 (IsoGameCharacter.updateFalling:
--- z>0 + 발밑 비솔리드면 틱당 z 0.125 감산, ZombieFallingState 애니 자동 발동).
+-- ── 좀비 레인 (zombie_rain) 서버 ── [프로토타입: 런타임 스퀘어 생성 방식] ──────
+-- B41 MP에서 야외 공중(z>0) 컬럼은 그리드 스퀘어가 존재하지 않아,
+--  ① 클라 재생성 관문(NetworkZombieSimulator.parseZombie: getGridSquare(realZ)==null → 스킵)
+--  ② 낙하물리(updateFalling: 현재 z 스퀘어 없으면 지상 폴백 → 유령 바닥 착지)
+-- 두 지점에서 z 리프트 방식이 전부 막힌다.
 --
--- 낙하 부상(DoLand, fallTime>50 시 체력 감소)은 좀비 체력이 클라 권한이라
--- 서버에서 못 막는다 -> 스폰 직후 체력을 캡처해 RainMark 배치로 전 클라에
--- 브로드캐스트하고, 소유 클라가 착지(z<=0.05) 확인 후 원복한다
--- (client/features/zombierain.lua). MutantMark와 동일한 검증된 채널 패턴.
+-- 해결: 스폰 전에 서버+전체 클라가 해당 컬럼에 z=1..4 "빈 스퀘어"를
+-- createNewGridSquare로 실제 생성해 둔다 (바닐라 건축 시스템이 쓰는 API,
+-- IsoCell.createNewGridSquare -- 멱등: 이미 있으면 그대로 반환).
+-- 스퀘어가 실존하면 ①②가 모두 바닐라 경로 그대로 성립한다.
 --
--- 세션은 리스트로 관리 -> 여러 후원이 겹쳐도 각자 독립 진행 (도네큐와 무관).
--- 스프린터 비율은 샌드박스 Rain_SprinterPercent(기본 0)를 클라가 읽어 전달.
+-- 플로우:
+--  Start 수신 → 컬럼 일괄 선정 → 서버 스퀘어 생성 → Prep 브로드캐스트(클라 생성)
+--  → PREP_DELAY 대기 → z=DROP_Z에 직접 스폰(페이스 유지) → RainMark(체력/스프린터)
+--
+-- 낙하 데미지(DoLand, fallTime>50)는 좀비 체력이 클라 권한이라 서버에서 못 막는다
+-- → 스폰 직후 체력을 RainMark로 브로드캐스트, 소유 클라가 착지(z<=0.05) 후 원복
+-- (client/features/zombierain.lua). 검증된 기존 채널 그대로.
+--
+-- [실험 유의] 생성된 빈 스퀘어는 지울 수 있는 API가 없어 월드에 잔류한다.
+-- 발동당 최대 RAIN_TOTAL x DROP_Z개. 실험 월드에서 세이브 크기/부하 실측 후
+-- 본 규모(500) 확장 여부를 결정한다.
 
 local RAIN_DURATION_MS   = 30000                            -- 30초
-local RAIN_TOTAL         = 500                              -- 총 마리수
-local RAIN_INTERVAL_MS   = RAIN_DURATION_MS / RAIN_TOTAL    -- 60ms/마리
+local RAIN_TOTAL         = 50                               -- 프로토타입 규모
+local RAIN_INTERVAL_MS   = RAIN_DURATION_MS / RAIN_TOTAL    -- 600ms/마리
 local RAIN_DROP_Z        = 4                                -- 낙하 시작 높이 (4층)
 local RAIN_MIN_DIST      = 3                                -- 플레이어 직격 방지 최소 거리
 local SPAWN_CAP_PER_TICK = 5                                -- 랙 스파이크 후 몰아치기 상한
 local BATCH_MS           = 500                              -- RainMark 브로드캐스트 묶음 주기
-local PICK_TRIES         = 20                               -- 스퀘어 후보 탐색 시도 횟수
+local PICK_TRIES         = 20                               -- 컬럼 후보 탐색 시도 횟수
+local PREP_DELAY_MS      = 1000                             -- 클라 스퀘어 생성 대기
 
 local _sessions = {}
 
--- 건물 없는 야외 지상(z=0) 스퀘어 선정.
+-- 건물 없는 야외 지상(z=0) 컬럼 선정.
 --  ① sq:isOutside()            : 실외
 --  ② sq:getBuilding() == nil   : 맵 건물 스퀘어 제외 (지붕 착지 방지)
---  ③ 물 스퀘어 제외             : 강/호수에 수장되는 낭비 방지
---  ④ 위층(z=1..4) 바닥 없음     : 플레이어 건축물 지붕/2층 바닥에 걸리는 것 방지
--- 20회 안에 못 찾으면 nil (도심 밀집 지역에서 일부 방울이 유실될 수 있으나
--- 페이스 유지를 위해 재시도하지 않는다 -> 최대 500, 밀집 지역은 그 이하).
-local function pickRainSquare(cell, px, py, radius)
+--  ③ 물 스퀘어 제외             : 강/호수 수장 방지
+--  ④ 위층(z=1..DROP_Z) 바닥 없음: 플레이어 건축물 지붕/2층 바닥 방지.
+--     스퀘어가 존재해도 바닥이 없으면 통과 (이전 레인이 만든 빈 스퀘어 재사용)
+local function pickRainColumn(cell, px, py, radius)
     for _ = 1, PICK_TRIES do
         local angle = ZombRand(628) / 100.0
         -- sqrt 분포 -> 원판 내 균등 (반경 비례 편중 방지)
@@ -49,33 +58,26 @@ local function pickRainSquare(cell, px, py, radius)
                     break
                 end
             end
-            if not blocked then return sq end
+            if not blocked then return x, y end
         end
     end
     return nil
 end
 
--- 1마리 스폰: 랜덤 아웃핏(outfit=nil), 후원자 이름표 없음, 체력 캡처 후
--- 세션 배치에 적재. 스프린터 롤은 서버에서 하되 walkType 실제 적용은
--- 클라 적용기가 담당한다 (B41 MP 좀비는 클라 권한 -- 서버 setWalkType은
--- 소유 클라 동기화에 덮일 수 있어 MutantMark식 클라 적용이 신뢰 경로).
-local function spawnRainZombie(session, cell)
-    local p = session.player
-    local sq = pickRainSquare(cell, p:getX(), p:getY(), session.radius)
-    if not sq then return end
-    local zeds = addZombiesInOutfit(sq:getX(), sq:getY(), 0, 1, nil, nil)
-    if not zeds or zeds:size() == 0 then return end
+-- 1마리 스폰: z=DROP_Z 스퀘어에 직접 생성. 랜덤 아웃핏(outfit=nil),
+-- 체력 캡처 후 세션 배치에 적재. 스프린터 롤은 서버에서 하되 walkType 실제
+-- 적용은 클라 적용기 담당 (B41 MP 좀비는 클라 권한).
+local function spawnRainZombie(session, col)
+    local zeds = addZombiesInOutfit(col.x, col.y, RAIN_DROP_Z, 1, nil, nil)
+    if not zeds or zeds:size() == 0 then return false end
     local zed = zeds:get(0)
     zed:DoZombieStats()
-    zed:makeInactive(true)
-    zed:makeInactive(false)
     local sprint = 0
     if session.sprintPct > 0 and ZombRand(100) < session.sprintPct then
         sprint = 1
     end
-    -- 4층 높이로 리프트 -> 다음 틱부터 엔진 updateFalling이 낙하 처리
-    pcall(function() zed:setZ(RAIN_DROP_Z + 0.0) end)
-    -- 후원받은 플레이어 쪽으로 어그로 (원본 ChaosMod 플로우 동일)
+    -- 후원받은 플레이어 쪽으로 어그로
+    local p = session.player
     pcall(function() zed:setTarget(p) end)
     pcall(function() zed:setTurnAlertedValues(math.floor(p:getX()), math.floor(p:getY())) end)
     session.batch[#session.batch + 1] = {
@@ -83,6 +85,7 @@ local function spawnRainZombie(session, cell)
         ["h"]  = zed:getHealth(),   -- 착지 후 원복할 낙하 전 체력
         ["s"]  = sprint,
     }
+    return true
 end
 
 local function flushBatch(session, force)
@@ -96,8 +99,6 @@ end
 
 local function onTick()
     if #_sessions == 0 then return end
-    local cell = getCell()
-    if not cell then return end
     local now = getTimestampMs()
     for i = #_sessions, 1, -1 do
         local s = _sessions[i]
@@ -106,26 +107,29 @@ local function onTick()
         if not alive then
             print("[PongDuRain] session dropped (player gone) spawned=" .. tostring(s.spawned))
             table.remove(_sessions, i)
-        else
+        elseif now >= s.readyAt then
+            if not s.startMs then s.startMs = now end
             local elapsed = now - s.startMs
             -- 경과시간 기준 목표 마리수와의 차분만큼 스폰 (틱당 상한으로 폭주 방지)
             local target = math.floor(elapsed / RAIN_INTERVAL_MS)
-            if target > RAIN_TOTAL then target = RAIN_TOTAL end
+            if target > #s.cols then target = #s.cols end
             local n = target - s.spawned
             if n > SPAWN_CAP_PER_TICK then n = SPAWN_CAP_PER_TICK end
             for _ = 1, n do
-                local ok, err = pcall(spawnRainZombie, s, cell)
-                if not ok then
-                    print("[PongDuRain] spawn error: " .. tostring(err))
-                end
-                -- 유실(후보 스퀘어 없음)도 카운트에 포함해 페이스를 고정한다
                 s.spawned = s.spawned + 1
+                local ok, res = pcall(spawnRainZombie, s, s.cols[s.spawned])
+                if not ok then
+                    print("[PongDuRain] spawn error: " .. tostring(res))
+                elseif res then
+                    s.hits = s.hits + 1
+                end
             end
             flushBatch(s, false)
-            if s.spawned >= RAIN_TOTAL or elapsed > RAIN_DURATION_MS + 5000 then
+            if s.spawned >= #s.cols or elapsed > RAIN_DURATION_MS + 5000 then
                 flushBatch(s, true)
                 print("[PongDuRain] session done player=" .. tostring(s.player:getUsername())
-                    .. " spawned=" .. tostring(s.spawned))
+                    .. " spawned=" .. tostring(s.spawned) .. " hits=" .. tostring(s.hits)
+                    .. " cols=" .. tostring(#s.cols))
                 table.remove(_sessions, i)
             end
         end
@@ -136,19 +140,66 @@ Events.OnTick.Add(onTick)
 Events.OnClientCommand.Add(function(module, command, player, data)
     if module ~= "PongDuRain" or command ~= "Start" then return end
     if not player then return end
+    local cell = getCell()
+    if not cell then return end
     local r   = tonumber(data and data["r"]) or 55
     local pct = tonumber(data and data["pct"]) or 0
     if r < 10 then r = 10 elseif r > 100 then r = 100 end
     if pct < 0 then pct = 0 elseif pct > 100 then pct = 100 end
+
+    -- 컬럼 일괄 선정 + 서버 스퀘어 생성 + 클라 브로드캐스트 페이로드 구성
+    -- [계측] 시작 틱 스파이크 실측용: 선정/생성 각 단계 소요시간을 분리 측정
+    local tPick0 = getTimestampMs()
+    local px, py = player:getX(), player:getY()
+    local cols, payload = {}, {}
+    local missedPick = 0
+    for _ = 1, RAIN_TOTAL do
+        local x, y = pickRainColumn(cell, px, py, r)
+        if x then
+            cols[#cols + 1]       = { x = x, y = y }
+            payload[#payload + 1] = { ["x"] = x, ["y"] = y }
+        else
+            missedPick = missedPick + 1
+        end
+    end
+    local tPick1 = getTimestampMs()
+    if #cols == 0 then
+        print("[PongDuRain] session aborted (no columns) player=" .. tostring(player:getUsername()))
+        return
+    end
+
+    local createdSq, reusedSq = 0, 0
+    for _, c in ipairs(cols) do
+        for zz = 1, RAIN_DROP_Z do
+            if cell:getGridSquare(c.x, c.y, zz) then
+                reusedSq = reusedSq + 1
+            else
+                cell:createNewGridSquare(c.x, c.y, zz, true)
+                createdSq = createdSq + 1
+            end
+        end
+    end
+    local tSquares1 = getTimestampMs()
+
+    sendServerCommand("PongDuRain", "Prep", { ["cols"] = payload, ["z"] = RAIN_DROP_Z })
+
+    print("[PongDuRain] prep pickMs=" .. tostring(tPick1 - tPick0)
+        .. " squareMs=" .. tostring(tSquares1 - tPick1)
+        .. " cols=" .. tostring(#cols) .. " missedPick=" .. tostring(missedPick)
+        .. " sqCreated=" .. tostring(createdSq) .. " sqReused=" .. tostring(reusedSq))
+
     _sessions[#_sessions + 1] = {
         player    = player,
-        radius    = r,
+        cols      = cols,
         sprintPct = pct,
-        startMs   = getTimestampMs(),
+        readyAt   = getTimestampMs() + PREP_DELAY_MS,
+        startMs   = nil,
         spawned   = 0,
+        hits      = 0,
         batch     = {},
         lastFlush = 0,
     }
     print("[PongDuRain] session start player=" .. tostring(player:getUsername())
-        .. " r=" .. tostring(r) .. " sprint%=" .. tostring(pct))
+        .. " r=" .. tostring(r) .. " sprint%=" .. tostring(pct)
+        .. " cols=" .. tostring(#cols))
 end)
