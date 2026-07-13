@@ -719,6 +719,24 @@ local function consumeDonationQueue()
     end
 end
 
+-- ── Admin test injection (DonationTestMenu 전용) ──────────────────────────────
+-- 우클릭 "donation test" 메뉴가 호출하는 진입점. 실제 도네이션과 완전히 같은
+-- 경로(donationQueue -> 병합/슬롯 -> 안전지대 락 -> 카운트다운 -> 발동)를 태운다.
+-- 단, PongDuStats Record는 보내지 않음 -- 테스트가 시즌 통계를 오염시키면 안 됨.
+PongDuDonationTest = PongDuDonationTest or {}
+function PongDuDonationTest.inject(featureId, sender, amount, message)
+    featureId = tostring(featureId or "")
+    if not rewardManager.isValid(featureId) then return false end
+    table.insert(donationQueue, {
+        amount    = tostring(amount or "0"),
+        featureId = featureId,
+        sender    = tostring(sender or "Admin"),
+        message   = tostring(message or ""),
+    })
+    markQueueDirty()
+    return true
+end
+
 -- PongDuDonation module receiver:
 --  * PlayAlert -- server relays a donation alert sound to nearby clients
 --    (sent by rewardManager missile / features/riseup; relay in server.lua).

@@ -114,7 +114,6 @@ local function onTick()
     end
 
     if isLandable(sq) then
-        getSoundManager():PlaySound("exile_exit", false, 1.0)
         global.b(string.format(" random_teleport: landed at %d,%d (attempt %d)",
             state.cx, state.cy, state.attempts))
         stopLoop()

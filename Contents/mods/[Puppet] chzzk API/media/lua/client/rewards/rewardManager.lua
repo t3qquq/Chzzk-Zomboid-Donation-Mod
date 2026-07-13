@@ -120,7 +120,7 @@ local rewardHandlers = {
         immediate = true,
         fn = function()
             global.b(" random_teleport FUNCTION START")
-            getSoundManager():PlaySound("exile_enter", false, 1.0)
+            getSoundManager():PlaySound("anomaly", false, 1.0)
             randomteleport.a(global.player)               -- Random Teleport (100~200 tiles)
             global.processingEvent = false
             global.b(" random_teleport FUNCTION END")
@@ -229,6 +229,18 @@ local rewardHandlers = {
 -- isValid(featureId) -> true if this featureId maps to a real reward.
 function rewardManager.isValid(featureId)
     return rewardHandlers[featureId] ~= nil
+end
+
+-- getFeatureIds() -> 등록된 featureId 전체를 알파벳순 배열로 반환.
+-- 어드민 테스트 메뉴(DonationTestMenu)가 항목을 동적으로 뽑는 데 쓴다.
+-- rewardHandlers에 기능을 추가/삭제하면 메뉴에도 자동 반영됨 (별도 관리 불필요).
+function rewardManager.getFeatureIds()
+    local ids = {}
+    for id, _ in pairs(rewardHandlers) do
+        table.insert(ids, id)
+    end
+    table.sort(ids)
+    return ids
 end
 
 -- isZoneBlocked(featureId) -> true면 안전지대 안에서는 발동 불가(immediate=false).
