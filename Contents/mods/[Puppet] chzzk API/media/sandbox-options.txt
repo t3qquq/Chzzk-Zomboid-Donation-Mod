@@ -39,12 +39,12 @@ option PongDu.VehicleDrop_Pool = {
 }
 
 option PongDu.Rain_Radius = {
-    type = integer, min = 10, max = 100, default = 55,
+    type = integer, min = 10, max = 50, default = 20,
     page = PongDu, translation = PongDu_Rain_Radius,
 }
 
 option PongDu.Rain_SprinterPercent = {
-    type = integer, min = 0, max = 100, default = 0,
+    type = integer, min = 0, max = 100, default = 20,
     page = PongDu, translation = PongDu_Rain_SprinterPercent,
 }
 

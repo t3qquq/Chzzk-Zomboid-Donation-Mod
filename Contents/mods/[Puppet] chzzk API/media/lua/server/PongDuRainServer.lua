@@ -22,8 +22,8 @@
 -- 본 규모(500) 확장 여부를 결정한다.
 
 local RAIN_DURATION_MS   = 30000                            -- 30초
-local RAIN_TOTAL         = 50                               -- 프로토타입 규모
-local RAIN_INTERVAL_MS   = RAIN_DURATION_MS / RAIN_TOTAL    -- 600ms/마리
+local RAIN_TOTAL         = 100                              -- 소환 규모
+local RAIN_INTERVAL_MS   = RAIN_DURATION_MS / RAIN_TOTAL
 local RAIN_DROP_Z        = 4                                -- 낙하 시작 높이 (4층)
 local RAIN_MIN_DIST      = 3                                -- 플레이어 직격 방지 최소 거리
 local SPAWN_CAP_PER_TICK = 5                                -- 랙 스파이크 후 몰아치기 상한
