@@ -363,6 +363,42 @@ local function findFreshZombie(sq, handled)
     return nil
 end
 
+-- ── 알몸 부활 차단: 시체를 fakeDead로 마킹한 뒤 부활시킨다 ───────────────────
+-- IsoDeadBody.reanimate()는 isFakeDead() 하나로 완전히 다른 두 경로를 가른다
+-- (IsoDeadBody.java:1309):
+--   true  -> setWasFakeDead(true). pid(옷차림 ID)를 시체에서 그대로 물려받아
+--            클라가 pid만으로 옷을 결정론적으로 재구성한다. 네트워크 의존 0.
+--   false -> setReanimatedPlayer(true) + createPlayerZombieDescriptor().
+--            옷이 pid로 안 가고 ZombieDescriptors 라는 별도 패킷으로 push되는데,
+--            좀비 sync(ZombiePacket)와 다른 채널이라 좀비가 먼저 도착하면
+--            ApplyReanimatedPlayerOutfit이 로컬 슬롯에서 null을 만나 '조용히'
+--            아무것도 안 하고, 그 직전에 HumanVisual은 이미 clear된 상태 +
+--            m_bPersistentOutfitInit=true 라 재시도조차 안 된다 -> 영구 알몸.
+-- 바닐라 죽은척 좀비가 옷이 멀쩡한 건 서버 사이드라서가 아니라 플래그를 켠 채로
+-- reanimate()에 들어가기 때문. 강령술도 같은 경로를 태우면 된다.
+--
+-- 문제: setFakeDead(true)는 샌드박스 DisableFakeDead==3(죽은척 OFF)이면 조용히
+-- 무시된다 (IsoDeadBody.java:361  if (!fakeDead || 값 != 3)).
+-- 우회: 옵션을 잠깐 1로 내렸다 즉시 되돌린다.
+--   · getSandboxOptions():set()은 IntegerConfigOption.value 필드 직접 쓰기일 뿐
+--     네트워크 전송/이벤트/저장이 전혀 없다. 위 좀비 스폰의 Cognition/Memory/
+--     Hearing 임시 변경과 동일한, 이미 검증된 패턴.
+--   · 되돌려도 무해한 이유: reanimate()는 bFakeDead 필드만 직독하고 샌드박스를
+--     재확인하지 않는다. 필드가 켜졌으면 옵션이 3으로 돌아가도 경로는 유지된다.
+--   · 값 1로 내리는 이유: 2는 updateRotting()에서 '내가 죽인 시체'를 1% 확률로
+--     자발적 죽은척으로 전환시킨다(IsoDeadBody.java:1050). 1은 그 로직이 없어
+--     이 짧은 창 동안 부작용이 없다.
+-- 반환값으로 실제 마킹 여부를 알린다 (실패 = 구 경로로 부활 = 알몸 가능).
+local function markFakeDead(body)
+    local so = getSandboxOptions()
+    local opt = so:getOptionByName("ZombieLore.DisableFakeDead")
+    local orig = opt and opt:getValue()
+    if orig == 3 then so:set("ZombieLore.DisableFakeDead", 1) end
+    body:setFakeDead(true)
+    if orig == 3 then so:set("ZombieLore.DisableFakeDead", orig) end
+    return body:isFakeDead()
+end
+
 DOServer["PongDuRiseUp"]["RiseUp"] = function(player, data)
     local cx = tonumber(data["x"]) or player:getX()
     local cy = tonumber(data["y"]) or player:getY()
@@ -411,6 +447,14 @@ DOServer["PongDuRiseUp"]["RiseUp"] = function(player, data)
                                     .. "," .. tostring(sq:getY())
                                     .. " kind=" .. tostring(kind))
                                 if kind then readable = readable + 1 end
+                                -- 좀비 시체만 마킹. 플레이어 시체는 옷이 pid가 아닌
+                                -- 진짜 wornItems라 pid 재구성이 불가능하므로 원래대로
+                                -- 디스크립터 경로(setReanimatedPlayer)를 타야 맞다.
+                                if b:isZombie() and not markFakeDead(b) then
+                                    print("[PongDu][RiseUp] setFakeDead BLOCKED @"
+                                        .. tostring(sq:getX()) .. "," .. tostring(sq:getY())
+                                        .. " -> 알몸 부활 가능. DisableFakeDead 확인 필요")
+                                end
                                 b:reanimateNow()
                                 raised = raised + 1
                                 -- ── 핵심 수정 ────────────────────────────────
@@ -618,8 +662,13 @@ Events.LoadGridsquare.Add(function(sq)
                 o:setReanimateTime(0)
                 -- reanimateTime(0)의 엔진 해석이 '비활성'인지 '즉시'인지 확실치 않아
                 -- 결정적 플래그로 이중 차단: fakeDead=false면 그 시체는 '진짜 시체'가
-                -- 되어 자발적 재부활 대상에서 빠진다(디버그 메뉴의 Reanimate(Player)
-                -- 경로). 의도적 강령술(reanimateNow)은 fakeDead와 무관하게 계속 작동.
+                -- 되어 자발적 재부활 대상에서 빠진다(updateFakeDead()가 첫 줄에서
+                -- isFakeDead()로 컷).
+                -- 주의: 의도적 강령술은 fakeDead와 '무관'하지 않다 — RiseUp이 부활
+                -- 직전에 markFakeDead()로 플래그를 다시 켜서 옷 유지 경로를 태운다.
+                -- 여기서 끄는 건 '자발적 부활 차단'이고, 저기서 켜는 건 '경로 선택'
+                -- 이라 목적이 다르며, 이 살균기는 청크 로드 시점에만 돌아서 RiseUp
+                -- 마킹(같은 틱에 reanimateNow까지 완료)과 겹치지 않는다.
                 o:setFakeDead(false)
             end)
         end
