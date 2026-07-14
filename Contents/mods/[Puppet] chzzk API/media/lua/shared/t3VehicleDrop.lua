@@ -18,8 +18,8 @@
 
 t3VehicleDrop = t3VehicleDrop or {}
 
-local MIN_SEARCH_RADIUS = 15 -- 플레이어로부터 최소 이 거리(타일) 이상 떨어진 곳에만 소환
-local MAX_SEARCH_RADIUS = 50 -- 이 반경 안에서 자리를 못 찾으면 최후 수단으로 플레이어 발밑에 소환
+local MIN_SEARCH_RADIUS = 10 -- 플레이어로부터 최소 이 거리(타일) 이상 떨어진 곳에만 소환
+local MAX_SEARCH_RADIUS = 30 -- 이 반경 안에서 자리를 못 찾으면 최후 수단으로 플레이어 발밑에 소환
 
 -- 실외 + 차량 없음 + 물 아님 + 장애물 없음(플레이어/좀비 제외)
 local function isValidDropSquare(sq)
@@ -74,8 +74,34 @@ local function findDropSquare(player)
     return player:getCurrentSquare()
 end
 
+-- fullType의 스크립트 조회.
+-- ScriptManager:getVehicle는 내부에서 getModule+getItemName으로 "Module.Type"을
+-- 알아서 분해하므로("Base.67commando" -> Base 모듈의 "67commando"),
+-- military 존 등록 키(풀네임)를 그대로 넘기면 된다.
+local function getVehicleScript(fullType)
+    local sm = getScriptManager and getScriptManager()
+    if not sm then return nil end
+    return sm:getVehicle(fullType)
+end
+
+-- 운전석(좌석 인덱스 0) 보유 여부 확인.
+-- BaseVehicle:isDriver(chr)가 getSeat(chr) == 0 으로 정의돼 있으므로,
+-- 스크립트에 0번 Passenger 슬롯이 정의돼 있어야 실제로 운전 가능한 차량이다.
+-- RV트레일러처럼 탑승은 가능해도 0번 슬롯(운전석)이 없으면 여기서 걸러진다.
+-- 스크립트 조회 자체가 안 되면 "확인 불가"로 보고 배제하지 않는다(과잉 제외 방지).
+local function hasDriverSeat(fullType)
+    local script = getVehicleScript(fullType)
+    if not script then return true end
+
+    local count = script:getPassengerCount()
+    if not count or count <= 0 then return false end
+
+    return script:getPassenger(0) ~= nil
+end
+
 -- military 존에 모드가 등록한 차량 풀네임("Base.67commando" 등) 목록 수집.
 -- 바닐라 B41에는 military 존이 없으므로, 여기 값이 있으면 전부 모드가 추가한 군용차.
+-- 운전석이 없는 항목(트레일러/피견인체 등)은 보급 리워드로 부적합하므로 제외한다.
 local function collectMilitaryVehicles()
     local list = {}
     local vzd = VehicleZoneDistribution
@@ -83,7 +109,9 @@ local function collectMilitaryVehicles()
     local vehicles = mil and mil.vehicles
     if vehicles then
         for fullType, _ in pairs(vehicles) do
-            list[#list + 1] = fullType
+            if hasDriverSeat(fullType) then
+                list[#list + 1] = fullType
+            end
         end
     end
     return list

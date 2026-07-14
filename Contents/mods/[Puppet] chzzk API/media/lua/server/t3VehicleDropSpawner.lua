@@ -80,27 +80,25 @@ function t3VehicleDrop.spawnVehicle(player, x, y, z, vehicleType, sender)
     vehicle:setEngineFeature(100, engineLoudness, engineForce)
     vehicle:transmitEngine()
 
-    -- 열쇠 생성 + 후원자 이름 표기
-    local key = vehicle:createVehicleKey()
-    if key then
-        local keyName = (sender and sender ~= "" and (sender .. "의 ") or "") .. key:getDisplayName()
-        key:setName(keyName)
-    end
-
-    if key then
-        local inv = player:getInventory()
-        if inv:getCapacityWeight() + key:getActualWeight() <= inv:getCapacity() then
-            inv:AddItem(key)
-        else
-            -- 무게 초과로 못 넣으면 기존처럼 발밑에 떨궈서 유실 방지
-            local playerSquare = player:getCurrentSquare()
-            if playerSquare then
-                playerSquare:AddWorldInventoryItem(key, 0.5, 0.5, 0)
-            end
+    -- 열쇠 지급.
+    -- 서버가 남의 인벤토리에 직접 AddItem하면 owning client에 반영이 안 될 수 있어
+    -- (검증된 API 부재), MP에서는 키를 만들지 않고 vehicleId만 요청자 본인에게
+    -- sendServerCommand로 전달한다. 실제 키 생성+AddItem은
+    -- client/VehicleDropKeyGrant.lua 에서 그 플레이어의 로컬 클라이언트가 직접 수행
+    -- (owning client가 직접 하므로 자연 동기화됨 -- 이 모드의 bombard/mutant 알림과 동일 패턴).
+    if not isClient() and not isServer() then
+        -- 솔로: 같은 프로세스이므로 바로 생성+지급해도 동기화 문제 없음
+        local key = vehicle:createVehicleKey()
+        if key then
+            local keyName = (sender and sender ~= "" and (sender .. "의 ") or "") .. key:getDisplayName()
+            key:setName(keyName)
+            player:getInventory():AddItem(key)
         end
-        if isServer() then
-            player:transmitInventory()
-        end
+    elseif isServer() then
+        sendServerCommand(player, "PongDuVehicleDrop", "GrantKey", {
+            vehicleId = vehicleId,
+            sender = sender,
+        })
     end
 
     print("[t3VehicleDrop] " .. tostring(vehicleType) .. " 소환 완료 (후원자: " .. tostring(sender) .. ")")
