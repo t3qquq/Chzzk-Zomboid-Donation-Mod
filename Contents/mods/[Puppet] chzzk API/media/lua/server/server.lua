@@ -334,8 +334,6 @@ end
 -- 클라이언트별 중복 부활을 원천 차단한다. reanimateNow()는 바닐라 디버그 메뉴
 -- "Reanimate (Zombie)"가 쓰는 강제 부활 API — 샌드박스 Reanimate 설정과 무관하게
 -- 즉시 부활시킨다 (DebugContextMenu.OnReanimateCorpse 와 동일).
--- 라이즈 업 후처리 스윕 대상 목록 (아래 EveryOneMinute 스윕에서 소비)
-local _riseSweeps = {}
 
 -- 부활 재스탬프 마크: RiseUp이 특좀 시체를 부활시킨 좌표를 잠깐 기록해둔다.
 -- reanimateNow로 부활한 좀비는 새 zid를 받지만 시체에서 물려받은
@@ -457,31 +455,32 @@ DOServer["PongDuRiseUp"]["RiseUp"] = function(player, data)
                                 end
                                 b:reanimateNow()
                                 raised = raised + 1
-                                -- ── 핵심 수정 ────────────────────────────────
-                                -- 방금 부활한 좀비를 서버에서 직접 잡아서:
-                                --  ① setReanimateTimer(0) : 부활 예약 상태를 이 자리에서
-                                --     즉시 제거 -> 다음 사망 시 시체에 reanimateTime이
-                                --     안 박힌다. RiseSweep(반경·시간 제한)의 사각을
-                                --     원천 제거 (버그②: 재부팅 후 재부활).
-                                --  ② registerMutant(nz,...) : 서버 권위 pid로 즉시 재등록.
-                                --     기존엔 클라가 MutantReregister로 재등록했는데, 클라가
-                                --     본 부활좀비 pid와 서버가 다음 사이클에 시체에서 읽는
-                                --     pid가 어긋나면(동기화 레이스) 다음 부활이 일반좀비가
-                                --     됐다. 등록·조회를 둘 다 서버 pid(mutantKey)로 통일해
-                                --     구조적으로 일치시킨다 (버그①: 2회차 부활 일반화).
+                                -- ── 방금 부활한 좀비 재등록 ──────────────────
+                                -- registerMutant(nz,...) : 서버 권위 pid로 즉시 재등록.
+                                -- 기존엔 클라가 MutantReregister로 재등록했는데, 클라가
+                                -- 본 부활좀비 pid와 서버가 다음 사이클에 시체에서 읽는
+                                -- pid가 어긋나면(동기화 레이스) 다음 부활이 일반좀비가
+                                -- 됐다. 등록·조회를 둘 다 서버 pid(mutantKey)로 통일해
+                                -- 구조적으로 일치시킨다 (버그①: 2회차 부활 일반화).
+                                --
+                                -- ★ setReanimateTimer(0) 제거됨: IsoZombie.ReanimateTimer는
+                                --   '부활 예약'이 아니라 ZombieOnGroundState의 기상
+                                --   카운트다운이다(ZombieOnGroundState:38이 유일한 writer).
+                                --   0으로 밀면 시체가 바닥에서 일어나는 모션이 사라진다.
+                                --   부활 예약(IsoDeadBody.reanimateTime) 방어는 아래
+                                --   LoadGridsquare 살균기가 담당한다.
+                                --
+                                -- ★ 알려진 결함: reanimateNow()는 setReanimateTime()만 하고
+                                --   실제 reanimate()는 다음 틱 IsoDeadBody.update()에서 돈다
+                                --   (IsoDeadBody:1240). 따라서 이 자리에서 findFreshZombie는
+                                --   항상 nil이다 (로그 확증: NOT FOUND 100/100).
+                                --   특좀 능력은 reanimate()의 modData 통째 복사로 계승되어
+                                --   결과적으로 동작하지만, 이 재등록은 안 걸린다.
+                                --   수집을 다음 틱으로 미루는 수정 필요 (별건).
                                 local nz = findFreshZombie(sq, handled)
                                 if nz then
-                                    -- ★확증①: reanimateNow 후 좀비가 같은 sq에 즉시 올라오는가.
-                                    --   NOT FOUND가 계속 찍히면 서버 재등록/타이머클리어가
-                                    --   안 걸린다는 뜻 -> reanimateNow 반환값 경로로 전환 필요.
-                                    local before = -1
-                                    pcall(function() before = nz:getReanimateTimer() end)
-                                    pcall(function() nz:setReanimateTimer(0) end)
-                                    local after = -1
-                                    pcall(function() after = nz:getReanimateTimer() end)
                                     print("[PongDu][RiseUp] fresh zombie zid=" .. tostring(nz:getOnlineID())
-                                        .. " newKey=" .. tostring(mutantKey(nz))
-                                        .. " timer " .. tostring(before) .. "->" .. tostring(after))
+                                        .. " newKey=" .. tostring(mutantKey(nz)))
                                     if kind then registerMutant(nz, kind, sender) end
                                 else
                                     print("[PongDu][RiseUp] fresh zombie NOT FOUND on sq "
@@ -519,26 +518,39 @@ DOServer["PongDuRiseUp"]["RiseUp"] = function(player, data)
     sendServerCommand("PongDuMutant", "MutantReviveDebug", {
         ["total"] = raised, ["readable"] = readable, ["marked"] = marked,
     })
-    -- 부활 예약 청소 스윕 예약 (아래 RiseSweep 참고). 부활 좀비들이 물고 있는
-    -- ReanimateTimer를 지워서 다음 사망 시 시체에 reanimateTime이 예약되는
-    -- 것을 원천 차단한다. 추적 반경은 1분 사이 이동 여유분(+60)을 더한다.
+    -- ── 기상 연출 창 브로드캐스트 ────────────────────────────────────────────
+    -- fakeDead 경로 부활 좀비는 isReanimatedPlayer=false라 클라를 눕히는 바닐라
+    -- 게이트(ParseZombie/setBooleanVariables) 두 개를 전부 통과 못 한다.
+    -- realState 관측(클라 getupScan)은 첫 패킷에 "onground"가 실려온다는 보장이
+    -- 없어 타이밍 의존적 — 그래서 서버가 "이 좌표 반경에서 방금 부활이 있었다"를
+    -- 직접 알리고, 클라는 이 창 안에서 처음 나타나는 좀비를 눕힌다
+    -- (riseup.lua GetupWindow 수신부 참조). 순수 연출용 — 게임 상태 영향 없음.
     if raised > 0 then
-        _riseSweeps[#_riseSweeps + 1] = {
-            x = cx, y = cy, r = r + 60,
-            left = 3,                      -- EveryOneMinute 3회 스윕 후 소멸
-        }
+        sendServerCommand("PongDuRiseUp", "GetupWindow", {
+            ["x"] = cx, ["y"] = cy, ["r"] = r,
+        })
     end
 end
 
--- ── 라이즈 업 후처리: 부활 예약 상태 청소 ────────────────────────────────────
--- 문제: reanimateNow()로 부활한 좀비는 엔진의 ReanimateTimer(>0)를 물고 있고,
--- 이 상태로 다시 죽으면 새 IsoDeadBody에 reanimateTime(부활 예약 시각)이
--- 박힌다. reanimateTime은 청크 세이브에 직렬화되므로 서버 재부팅 후 로드되면
--- 예약 시각이 이미 지나 있어 시체가 다시 일어난다 ("한 번 되살렸던 애들만
--- 재부팅 후 부활" 증상). 2중 방어로 차단:
---   ① RiseSweep  : 부활 직후 주변 좀비의 ReanimateTimer를 0으로 — 원천 차단
---   ② LoadGridsquare : 로드되는 좀비 시체의 reanimateTime을 0으로 —
---                      이미 세이브에 예약이 박힌 기존 오염 시체까지 소급 무효화
+-- ── 라이즈 업 후처리: 부활 예약 청소 ─────────────────────────────────────────
+-- 문제: 부활시킨 시체가 다시 죽으면 새 IsoDeadBody에 reanimateTime(부활 예약
+-- 시각)이 박힐 수 있다. reanimateTime은 청크 세이브에 직렬화되므로 서버 재부팅
+-- 후 로드되면 예약 시각이 이미 지나 있어 시체가 또 일어난다 ("한 번 되살렸던
+-- 애들만 재부팅 후 부활" 증상).
+--
+-- ★ 구 RiseSweep(EveryOneMinute) 삭제됨 — 애초에 엉뚱한 필드를 건드리고 있었다.
+--   IsoDeadBody.reanimateTime : 진짜 '시체 부활 예약 시각'
+--   IsoZombie.ReanimateTimer  : 넘어진 좀비의 '기상 카운트다운' (30~90)
+--   이름만 비슷할 뿐 완전히 무관하다. IsoZombie.ReanimateTimer의 유일한 writer는
+--   ZombieOnGroundState.enter():38 이고, IsoZombie:582에서 AnimSet 변수
+--   "reanimatetimer"로 노출돼 0이 되면 기상 애니메이션으로 전이하는 값이다.
+--   즉 구 RiseSweep은 부활 예약을 지운 적이 없고, 부활 좀비 전원의 기상 타이머를
+--   0으로 밀어 '모션 없이 즉시 기립'시키는 부작용만 냈다 (로그 확증: RiseUp
+--   raised=100 -> RiseSweep cleared 100).
+--
+-- 실제 방어는 아래 LoadGridsquare 살균기 한 곳이면 충분하다 — 그쪽은 시체의
+-- reanimateTime(올바른 필드)을 0으로 밀어서 이미 세이브에 예약이 박힌 오염
+-- 시체까지 소급 무효화한다.
 
 -- ── stale md 정리 (서버 풀 재활용 방어) ──────────────────────────────────────
 -- B41은 죽은 좀비의 IsoZombie 객체를 풀에 반환 후 재사용하는데 modData를
@@ -603,39 +615,6 @@ local function staleSweep()
     end
 end
 Events.OnTick.Add(staleSweep)
-
-Events.EveryOneMinute.Add(function()
-    if #_riseSweeps == 0 then return end
-    local cell = getCell()
-    if not cell then return end
-    local zeds = cell:getZombieList()
-    if not zeds then return end
-    local cleared = 0
-    for i = 0, zeds:size() - 1 do
-        local z = zeds:get(i)
-        local ok, timer = pcall(function() return z:getReanimateTimer() end)
-        if ok and timer and timer > 0 then
-            local zx, zy = z:getX(), z:getY()
-            for _, m in ipairs(_riseSweeps) do
-                if math.abs(zx - m.x) <= m.r and math.abs(zy - m.y) <= m.r then
-                    z:setReanimateTimer(0)
-                    cleared = cleared + 1
-                    break
-                end
-            end
-        end
-    end
-    if cleared > 0 then
-        srvlog("RiseSweep: cleared ReanimateTimer on " .. cleared .. " zombies")
-        print("[PongDu][RiseSweep] cleared ReanimateTimer on " .. cleared .. " zombies (backstop)")
-    end
-    for i = #_riseSweeps, 1, -1 do
-        _riseSweeps[i].left = _riseSweeps[i].left - 1
-        if _riseSweeps[i].left <= 0 then
-            table.remove(_riseSweeps, i)
-        end
-    end
-end)
 
 -- ② 시체 로드 시 부활 예약 무효화. 플레이어 시체(감염 사망 -> 좀비화)는
 --    바닐라의 정상 부활 경로이므로 건드리지 않는다. 좀비 시체는 바닐라에서
