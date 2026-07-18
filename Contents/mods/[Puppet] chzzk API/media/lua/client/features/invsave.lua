@@ -70,10 +70,31 @@ end)
 Events.OnEquipSecondary.Add(function(chr, item)
     if chr == getPlayer() and item then lastSecondary = item end
 end)
--- 새 캐릭터(리스폰)로 넘어가면 이전 삶의 레퍼런스는 버린다.
+
+-- 접속/재접속 로드 대응: IsoGameCharacter.load()(41.78.19)는 leftHandItem/
+-- rightHandItem을 setter를 거치지 않고 필드에 직접 대입하므로 OnEquipPrimary/
+-- Secondary가 발화하지 않는다. 즉 무기를 든 채로 접속한 뒤 한 번도 재장착하지
+-- 않으면 위 추적 레퍼런스가 nil인 채로 남아, 낙하 무기 회수(및 사망 시
+-- dropHandItems로 떨어진 손 무기 회수)가 전부 실패한다. 그래서 현재 손 아이템을
+-- 직접 읽어 시드한다. (비어있으면 건드리지 않음 -> 리스폰 리셋과 충돌 없음)
+local function seedHandRefs(player)
+    player = player or getPlayer()
+    if not player then return end
+    local p = player:getPrimaryHandItem()
+    local s = player:getSecondaryHandItem()
+    if p then lastPrimary = p end
+    if s then lastSecondary = s end
+end
+
 Events.OnCreatePlayer.Add(function(index, player)
+    -- 새 캐릭터(리스폰)로 넘어가면 이전 삶의 레퍼런스는 버린다.
     lastPrimary, lastSecondary = nil, nil
+    -- 재접속 로드라면 이 시점에 손 아이템이 이미 있으므로 즉시 시드.
+    seedHandRefs(player)
 end)
+-- 클라이언트 로드 순서에 따라 OnCreatePlayer 시점에 손이 아직 비어 보일 수
+-- 있으므로, 게임 진입 완료 후 한 번 더 시드한다(같은 참조라 중복 무해).
+Events.OnGameStart.Add(function() seedHandRefs(nil) end)
 
 -- ── 문자열 인코딩 (rewards.txt와 동일하게 URL 인코딩 계열) ───────────────────────
 -- 주의: Kahlua string.byte는 UTF-16 코드포인트를 반환하므로 (한글이면 >255)
@@ -108,6 +129,8 @@ end
 --  8 ammo  9 chambered  10 containsClip  11 age  12 hungChange  13 thirstChange
 -- 14 dirtyness  15 bloodLevel  16 wetness  17 keyId  18 parts(콤마)  19 modData(콤마 k=t:v)
 -- 20 handSlot(P/S/B/-)  21 hotbarSlotType  22 hotbarModelAttach
+-- 23 maxAmmo (MaxAmmo>0인 아이템만; GunFighter류가 드럼/확장 탄창 장착 시
+--    총기 MaxAmmo를 동적으로 바꾸므로 기본값 복원으로 인한 불일치 방지)
 
 local function serializeItem(item, depth, wornLoc, out, handSlot)
     -- (핫바 부착 정보는 아이템 자신이 들고 있으므로 인자 추가 없이 여기서 직접 읽는다)
@@ -146,7 +169,15 @@ local function serializeItem(item, depth, wornLoc, out, handSlot)
         end
         if #pl > 0 then parts = table.concat(pl, ",") end
     else
-        f[8], f[9], f[10] = "-", "-", "-"
+        -- 독립 탄창(바닐라 9mmClip 등, 모드 탄창 포함): HandWeapon이 아니라
+        -- 베이스 InventoryItem이 잔탄(currentAmmoCount)을 들고 있으므로
+        -- MaxAmmo>0 이면 잔탄을 저장한다. (미저장 시 복원 후 0발이 되는 버그)
+        if item:getMaxAmmo() > 0 then
+            f[8] = tostring(item:getCurrentAmmoCount())
+        else
+            f[8] = "-"
+        end
+        f[9], f[10] = "-", "-"
     end
 
     if instanceof(item, "Food") then
@@ -200,6 +231,11 @@ local function serializeItem(item, depth, wornLoc, out, handSlot)
     else
         f[21], f[22] = "-", "-"
     end
+
+    -- 23: MaxAmmo (총기+탄창 공통). GunFighter류 모드가 드럼/확장 탄창 장착 시
+    -- setMaxAmmo로 총기 값을 바꾸는데, 팩토리 생성 복원은 스크립트 기본값으로
+    -- 돌아가 modData(ClipType 등)와 어긋나므로 실제 값을 저장해 되돌린다.
+    f[23] = (item:getMaxAmmo() > 0) and tostring(item:getMaxAmmo()) or "-"
 
     out[#out + 1] = table.concat(f, SEP)
 end
@@ -327,8 +363,13 @@ local function restoreLine(f, player, stack, pendingHotbar)
         item:setUsedDelta(tonumber(f[7]) or 0)
     end
 
+    -- MaxAmmo 복원(잔탄보다 먼저). 구버전 스냅샷엔 f[23]이 없으므로 nil 가드.
+    if f[23] and f[23] ~= "-" then item:setMaxAmmo(tonumber(f[23]) or item:getMaxAmmo()) end
+    -- 잔탄: 총기뿐 아니라 독립 탄창도 베이스 InventoryItem의 currentAmmoCount를
+    -- 쓰므로 클래스 구분 없이 복원한다.
+    if f[8] ~= "-" then item:setCurrentAmmoCount(tonumber(f[8]) or 0) end
+
     if instanceof(item, "HandWeapon") and item:isRanged() then
-        if f[8]  ~= "-" then item:setCurrentAmmoCount(tonumber(f[8]) or 0) end
         if f[9]  ~= "-" then item:setRoundChambered(f[9] == "1") end
         if f[10] ~= "-" then item:setContainsClip(f[10] == "1") end
         if f[18] and f[18] ~= "-" and f[18] ~= "" then
