@@ -99,14 +99,15 @@ end
 -- 서버/네트워크 영향 없음 — 순수 클라 로컬 상태 보정.
 local _seen = {}      -- [onlineID] = 최초 관측 시각(ms)
 local _done = {}      -- [onlineID] = true (눕혔거나 제외 확정 — 더 안 건드림)
-local _laidAt = {}    -- [onlineID] = 눕힌 시각(ms) — 유지 검증 대기열
+local _laid = {}      -- [onlineID] = {t=눕힌 시각} — AI/애니 정합성 감시 대기열
 local _windows = {}   -- {x, y, r2, arrived, expires} : 서버 GetupWindow 수신분
 local _lastScan = 0
 local SCAN_INTERVAL_MS = 200   -- 평시 스캔 간격 (창 활성 중엔 매 틱)
 local WINDOW_MS        = 4000  -- 창 유지: 서버측 기상 타이머(30~90틱)보다 약간 길게
 local PRE_GRACE_MS     = 2000  -- 좀비 패킷이 커맨드보다 먼저 도착한 경우 소급 폭
 local YOUNG_MS         = 4000  -- 최초 관측 후 이 시간까지만 재평가
-local VERIFY_MS        = 500   -- 눕힌 뒤 이 시점에 상태 유지 여부 검증(진단용)
+local ANIM_SETTLE_MS   = 700   -- laydown 후 애니메이터가 lying 노드에 진입할 유예
+local TRACK_CAP_MS     = 30000 -- 추적 하드캡 (북키핑 정리용 — 조치 없음)
 
 -- 만료 창 정리. 반환값: 활성 창 존재 여부.
 -- ★ 창 활성 중엔 스캔을 매 틱으로 돌린다: 로그 분석 결과 laydown 커버리지는
@@ -146,24 +147,86 @@ local function layDown(z, zid, why)
         z:setOnFloor(true)
         z:changeState(ZombieOnGroundState.instance())
     end)
-    if ok then _laidAt[zid] = getTimestampMs() end
+    if ok then _laid[zid] = { t = getTimestampMs() } end
     print("[PongDu][RiseUp][Getup] laydown zid=" .. tostring(zid)
         .. " via=" .. why .. " ok=" .. tostring(ok)
         .. (ok and "" or (" err=" .. tostring(err))))
 end
 
--- 눕힌 뒤 VERIFY_MS 시점의 상태 유지 검증 (진단용).
--- held=false = 네트워크 상태 동기화가 강제 상태를 걷어냄(역전 가설)
--- held=true인데 벌떡 섰다 = 애니메이터 미전이(정착 가설)
-local function verifyLaid(z, zid)
-    local held, name
-    pcall(function()
-        local st = z:getCurrentState()
-        held = (st == ZombieOnGroundState.instance())
-        name = tostring(st)
+-- ── AI/애니메이터 정합성 조정기 ──────────────────────────────────────────
+-- ★ 1차 시도(이동거리+6초 timeout 휴리스틱)의 실패 로그 확증:
+--   밀집 부활 더미에서는 좀비들이 서로를 밟아 isBeingSteppedOn()이 기상
+--   타이머를 계속 리셋한다(ZombieOnGroundState.execute) — 6초 이상 눕는 게
+--   정상이다. 이걸 timeout이 고착으로 오판해 AI만 idle로 밀면, 기상 타이머는
+--   ZombieOnGroundState.execute 안에서만 감소하므로 애니메이터가 lying에서
+--   영원히 못 나오는 역방향 데드락이 된다 (rescue reason=timeout 22/22 전원
+--   영구 눕기 증상과 일치).
+--
+-- 2차: 추정을 버리고 애니메이터를 직접 읽는다.
+--   getCurrentActionContextStateName() (IsoGameCharacter:1058, Kahlua 노출)
+--   이 ActionContext 노드명을 반환 — "onground"류 = 시각적으로 누움.
+--   AI 상태(getCurrentState)와 교차하면 네 사분면이 나오고, 어긋난 두 칸만
+--   서로 반대 방향으로 밀어주면 어느 쪽이든 일관 상태로 수렴한다:
+--     AI=onground + 애니=standing → idle로 rescue   (구 접촉 글리치)
+--     AI=idle    + 애니=onground → onground로 revert (역방향 데드락 치유
+--                                   — revert로 타이머 재가동, 자연 기상)
+--   일관 lying은 방치(기상은 바닐라 몫), 일관 standing은 추적 종료.
+local LYING_NODES = {
+    ["onground"] = true, ["getup"] = true, ["getdown"] = true,
+    ["falldown"] = true, ["falling"] = true,
+    ["fakedead"] = true, ["fakedead-attack"] = true,
+}
+
+local function rescueStuck(z, zid)
+    local ok, err = pcall(function()
+        z:setOnFloor(false)
+        z:changeState(ZombieIdleState.instance())
     end)
-    print("[PongDu][RiseUp][Getup] verify zid=" .. tostring(zid)
-        .. " held=" .. tostring(held) .. " state=" .. tostring(name))
+    print("[PongDu][RiseUp][Getup] rescue zid=" .. tostring(zid)
+        .. " ok=" .. tostring(ok)
+        .. (ok and "" or (" err=" .. tostring(err))))
+end
+
+local function revertToGround(z, zid)
+    local ok, err = pcall(function()
+        z:setOnFloor(true)
+        z:changeState(ZombieOnGroundState.instance())
+    end)
+    print("[PongDu][RiseUp][Getup] revert zid=" .. tostring(zid)
+        .. " ok=" .. tostring(ok)
+        .. (ok and "" or (" err=" .. tostring(err))))
+end
+
+-- laydown 추적분 검사. 반환: 처리 완료 여부(true면 대기열에서 제거).
+local function checkLaid(z, zid, rec, now)
+    local elapsed = now - rec.t
+    if elapsed < ANIM_SETTLE_MS then return false end   -- 애니 전이 유예
+    if elapsed > TRACK_CAP_MS then
+        print("[PongDu][RiseUp][Getup] track-cap zid=" .. tostring(zid))
+        return true
+    end
+
+    local ai, anim
+    local ok = pcall(function()
+        ai = z:getCurrentState()
+        anim = z:getCurrentActionContextStateName()
+    end)
+    if not ok then return false end
+    local aiGround = (ai == ZombieOnGroundState.instance())
+    local lying = LYING_NODES[anim] or false
+
+    if aiGround and not lying then
+        rescueStuck(z, zid)          -- 고착: AI 눕고 애니 서있음
+        return false                 -- revert 필요 여부 계속 감시
+    elseif not aiGround and anim == "onground" and ai == ZombieIdleState.instance() then
+        revertToGround(z, zid)       -- 역방향: 우리가 박은 idle + 애니 lying
+        return false
+    elseif not aiGround and not lying then
+        print("[PongDu][RiseUp][Getup] getup-ok zid=" .. tostring(zid)
+            .. " after=" .. tostring(elapsed) .. "ms anim=" .. tostring(anim))
+        return true                  -- 일관 standing: 완치
+    end
+    return false                     -- 일관 lying 또는 전이 중: 대기
 end
 
 local function getupScan()
@@ -201,12 +264,11 @@ local function getupScan()
         end
     end
 
-    -- 유지 검증 패스
-    for zid, t in pairs(_laidAt) do
-        if now - t >= VERIFY_MS then
-            local z = alive[zid]
-            if z then verifyLaid(z, zid) end
-            _laidAt[zid] = nil
+    -- 고착 감시 패스
+    for zid, rec in pairs(_laid) do
+        local z = alive[zid]
+        if z and checkLaid(z, zid, rec, now) then
+            _laid[zid] = nil
         end
     end
 
@@ -214,7 +276,7 @@ local function getupScan()
         if not alive[zid] then
             _seen[zid] = nil
             _done[zid] = nil
-            _laidAt[zid] = nil
+            _laid[zid] = nil
         end
     end
 end
@@ -222,8 +284,8 @@ end
 Events.OnTick.Add(function()
     local now = getTimestampMs()
     local active = pruneWindows()
-    -- 창 활성 중이거나 검증 대기 좀비가 있으면 매 틱, 아니면 200ms 간격
-    if not active and isEmpty(_laidAt) then
+    -- 창 활성 중이거나 고착 감시 대기 좀비가 있으면 매 틱, 아니면 200ms 간격
+    if not active and isEmpty(_laid) then
         if now - _lastScan < SCAN_INTERVAL_MS then return end
     end
     _lastScan = now
