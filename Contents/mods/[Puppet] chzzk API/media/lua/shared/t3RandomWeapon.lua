@@ -52,19 +52,35 @@ t3RandomWeapon.RANGED_TABLE = {
 }
 
 -- ── Melee pool cache ────────────────────────────────────────────────────────
--- category name -> array of full item names ("Base.Katana"). Built lazily on
--- first melee box open (script items are fully loaded by then).
-local meleePools = nil
+-- Authoritative pools come from the server (t3RandomWeaponServer), built from
+-- the world loot distribution tables so only naturally-spawning weapons enter.
+--   * SP / local host: server lua is loaded locally -> BuildPools() direct.
+--   * MP client: requested at OnGameStart, received via OnServerCommand.
+--   * Fallback (sync not yet arrived): local vanilla-only build via getModID(),
+--     which cannot see distribution tables but at least blocks modded
+--     transform-only items (e.g. bayonet-form rifles).
+local syncedPools = nil -- server-authoritative (or locally built in SP)
+local meleePools = nil  -- fallback cache (vanilla-only)
 
 local function buildMeleePools()
     meleePools = {}
     for _, entry in ipairs(t3RandomWeapon.CATEGORY_TABLE) do
         meleePools[entry.category] = {}
     end
+    local rejectedModded = 0
     local allItems = getScriptManager():getAllItems()
     for i = 1, allItems:size() do
         local scriptItem = allItems:get(i - 1)
-        if scriptItem:getTypeString() == "Weapon" and not scriptItem:getObsolete() then
+        -- Vanilla-only filter. NOTE: matching the "Base." module prefix on
+        -- getFullName() is NOT enough — mods (e.g. Arsenal Gunfighter's
+        -- Home-key bayonet-form weapons) can register items directly under
+        -- module Base instead of their own namespace, so fullName alone lies
+        -- about origin. getModID() tracks the actual source mod.info the item
+        -- was loaded from; vanilla items report "pz-vanilla" regardless of
+        -- which module they declare. Confirmed via Item.java: modID =
+        -- ScriptManager.getCurrentLoadFileMod(), independent of module name.
+        if scriptItem:getTypeString() == "Weapon" and not scriptItem:getObsolete()
+                and scriptItem:getModID() == "pz-vanilla" then
             local cats = scriptItem:getCategories()
             for _, entry in ipairs(t3RandomWeapon.CATEGORY_TABLE) do
                 if cats:contains(entry.category)
@@ -73,8 +89,11 @@ local function buildMeleePools()
                     break -- one pool per item; first matching category wins
                 end
             end
+        elseif scriptItem:getTypeString() == "Weapon" and not scriptItem:getObsolete() then
+            rejectedModded = rejectedModded + 1
         end
     end
+    print(LOG .. "rejected " .. rejectedModded .. " non-vanilla weapon items (modID check)")
     for _, entry in ipairs(t3RandomWeapon.CATEGORY_TABLE) do
         print(LOG .. "pool built: " .. entry.category .. " = " .. #meleePools[entry.category] .. " items")
         if #meleePools[entry.category] == 0 then
@@ -94,17 +113,30 @@ local function pickWeighted(tbl)
     return tbl[#tbl] -- safety net
 end
 
+-- Resolve the pools to draw from, best source first.
+local function resolvePools()
+    if syncedPools then return syncedPools, "synced" end
+    if not isClient() and t3RandomWeaponServer then
+        -- SP (or any context where server lua is loaded): build directly from
+        -- the distribution tables, no network round trip needed.
+        syncedPools = t3RandomWeaponServer.BuildPools()
+        return syncedPools, "local-server"
+    end
+    if not meleePools then buildMeleePools() end
+    return meleePools, "fallback"
+end
+
 -- Roll category by weight, then uniform pick inside the category pool.
 local function pickMeleeItem()
-    if not meleePools then buildMeleePools() end
+    local pools, source = resolvePools()
     local catEntry = pickWeighted(t3RandomWeapon.CATEGORY_TABLE)
-    local pool = meleePools[catEntry.category]
+    local pool = pools[catEntry.category]
     if not pool or #pool == 0 then
-        print(LOG .. "ERROR: no items in category " .. tostring(catEntry.category) .. ", falling back to Base.Hammer")
+        print(LOG .. "ERROR: no items in category " .. tostring(catEntry.category) .. " (source=" .. source .. "), falling back to Base.Hammer")
         return "Base.Hammer", catEntry.category
     end
     local itemName = pool[ZombRand(#pool) + 1]
-    print(LOG .. "rolled category=" .. catEntry.category .. " item=" .. itemName .. " (pool size " .. #pool .. ")")
+    print(LOG .. "rolled category=" .. catEntry.category .. " item=" .. itemName .. " (pool size " .. #pool .. ", source=" .. source .. ")")
     return itemName, catEntry.category
 end
 
@@ -138,9 +170,21 @@ local function grant(player, itemName, donor, clip, ammo)
 end
 
 -- Recipe OnCreate handlers -------------------------------------------------
+-- Easter egg: 1% chance the melee box contains John Wick's Pencil instead of
+-- a category roll. Item defined in t3_rewards_items.txt (Improvised category +
+-- non-Base module keeps it out of the normal pools).
+local EASTER_EGG_CHANCE = 1 -- percent
+local EASTER_EGG_ITEM = "t3chzzkDonation.JohnWickPencil"
+
 function t3RandomWeapon.OpenMeleeBox(items, result, player)
     if not player then return end
-    local itemName = pickMeleeItem()
+    local itemName
+    if ZombRand(100) < EASTER_EGG_CHANCE then
+        itemName = EASTER_EGG_ITEM
+        print(LOG .. "EASTER EGG rolled: " .. itemName)
+    else
+        itemName = pickMeleeItem()
+    end
     grant(player, itemName, findDonor(items))
 end
 
@@ -150,3 +194,26 @@ function t3RandomWeapon.OpenRangedBox(items, result, player)
     print(LOG .. "rolled ranged item=" .. entry.item)
     grant(player, entry.item, findDonor(items), entry.clip, entry.ammo)
 end
+
+-- ── MP pool sync ────────────────────────────────────────────────────────────
+Events.OnServerCommand.Add(function(module, command, args)
+    if module ~= "PongDuRandomWeapon" or command ~= "Pools" then return end
+    if not args or not args.pools then
+        print(LOG .. "WARNING: Pools command received without payload")
+        return
+    end
+    syncedPools = args.pools
+    local summary = {}
+    for _, entry in ipairs(t3RandomWeapon.CATEGORY_TABLE) do
+        local pool = syncedPools[entry.category]
+        table.insert(summary, entry.category .. "=" .. tostring(pool and #pool or 0))
+    end
+    print(LOG .. "pools synced from server: " .. table.concat(summary, " "))
+end)
+
+Events.OnGameStart.Add(function()
+    if isClient() then
+        print(LOG .. "requesting weapon pools from server")
+        sendClientCommand("PongDuRandomWeapon", "RequestPools", {})
+    end
+end)

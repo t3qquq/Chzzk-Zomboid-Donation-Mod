@@ -175,6 +175,57 @@ item weapon_box_ranged
     Tooltip             = Tooltip_weapon_box,
 }
 
+/* random_weapon easter egg: 근접 보급상자 1% 확률 등장 (t3RandomWeapon.lua).
+   바닐라 Pencil 기반 + 카타나급 살상력(확정 크리티컬), 대신 내구 3에
+   매 타격 내구 1 감소 = 정확히 세 번 휘두르면 부러진다.
+   Categories에 Improvised가 있어 일반 근접 풀 자동 편입에서 제외됨. */
+item JohnWickPencil
+{
+    DisplayCategory = Weapon,
+    Type            = Weapon,
+    DisplayName     = John Wick's Pencil,
+    Icon            = Pencil,
+    WeaponSprite    = Pencil,
+    Tooltip         = Tooltip_JohnWickPencil,
+    Categories      = Improvised;SmallBlade,
+    SubCategory     = Stab,
+    SwingAnim       = Stab,
+    RunAnim         = Run_Weapon2,
+    IdleAnim        = Idle_Weapon2,
+    IsAimedHandWeapon = TRUE,
+    Weight          = 0.1,
+    MinRange        = 0.61,
+    MaxRange        = 0.8,
+    MinAngle        = 0.65,
+    MinimumSwingTime = 2,
+    SwingTime       = 2,
+    SwingAmountBeforeImpact = 0.02,
+    AimingMod       = 0.8,
+    PushBackMod     = 0.3,
+    KnockdownMod    = 0,
+    KnockBackOnNoDeath = FALSE,
+    SplatBloodOnNoDeath = FALSE,
+    SplatNumber     = 1,
+    MaxHitCount     = 1,
+    EnduranceMod    = 0.5,
+    MinDamage       = 2,
+    MaxDamage       = 3,
+    CriticalChance  = 100,
+    CritDmgMultiplier = 10,
+    ConditionMax    = 3,
+    ConditionLowerChanceOneIn = 1,
+    DoorDamage      = 0,
+    TreeDamage      = 0,
+    WeaponLength    = 0.15,
+    Tags            = Write;Pencil,
+    BreakSound      = PenBreak,
+    HitFloorSound   = PenHit,
+    ImpactSound     = PenHit,
+    DoorHitSound    = PenHit,
+    HitSound        = PenHit,
+    SwingSound      = PenSwing,
+}
+
 recipe Open Weapon Box
 {
     weapon_box_melee,
