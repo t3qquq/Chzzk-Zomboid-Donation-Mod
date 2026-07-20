@@ -17,20 +17,20 @@ local function onServerCommand(module, command, args)
 
     local keyId = args and args.keyId
     if not keyId then
-        print("[VehicleDropKeyGrant] keyId 누락, 키 지급 취소 (vehicleId " .. tostring(args and args.vehicleId) .. ")")
+        print("[VehicleDropKeyGrant] keyId missing, key grant cancelled (vehicleId " .. tostring(args and args.vehicleId) .. ")")
         return
     end
 
     local player = getPlayer()
     if not player then
-        print("[VehicleDropKeyGrant] 로컬 플레이어 없음, 키 지급 취소")
+        print("[VehicleDropKeyGrant] No local player, key grant cancelled")
         return
     end
 
     -- 차량 조회 없이 로컬에서 키 생성 (BaseVehicle.createVehicleKey와 동일 구성)
     local key = InventoryItemFactory.CreateItem("Base.CarKey")
     if not key then
-        print("[VehicleDropKeyGrant] CarKey 아이템 생성 실패")
+        print("[VehicleDropKeyGrant] Failed to create CarKey item")
         return
     end
     key:setKeyId(keyId)
@@ -55,7 +55,7 @@ local function onServerCommand(module, command, args)
     key:setName(keyName)
 
     player:getInventory():AddItem(key)
-    print("[VehicleDropKeyGrant] 키 지급 완료: " .. keyName .. " (keyId " .. tostring(keyId) .. ")")
+    print("[VehicleDropKeyGrant] Key granted: " .. keyName .. " (keyId " .. tostring(keyId) .. ")")
 end
 
 Events.OnServerCommand.Add(onServerCommand)

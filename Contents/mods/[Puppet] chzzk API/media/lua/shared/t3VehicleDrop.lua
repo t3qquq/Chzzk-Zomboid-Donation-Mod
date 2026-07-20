@@ -4,9 +4,9 @@
 -- 그 자리에 차량을 무작위로 소환한다.
 --
 -- 차종 선택 규칙 (pickVehicleType):
---   1) military 존에 모드가 등록한 차량이 하나라도 있으면 그 목록에서만 선택.
---      (바닐라 B41에는 military 존 자체가 없으므로, 여기 든 차량은 전부 모드 추가 군용차.)
---   2) military 존에 등록된 차량이 하나도 없으면 샌드박스 VehicleDrop_Pool에서 선택.
+--   military 존 등록 차량(모드 추가 군용차; 바닐라 B41에는 military 존이 없음)과
+--   샌드박스 VehicleDrop_Pool의 "합집합"에서 무작위 선택.
+--   둘 다 비어있으면 FALLBACK_VEHICLES(바닐라 픽업트럭/밴 9종)에서 무작위 선택.
 --
 -- 실제 addVehicleDebug 호출(t3VehicleDrop.spawnVehicle)은
 -- server/t3VehicleDropSpawner.lua 에 있다 (솔로/서버에서만 로드됨).
@@ -72,12 +72,12 @@ local function findDropSquare(player)
         local cx = px + math.floor(math.cos(angle) * dist + 0.5)
         local cy = py + math.floor(math.sin(angle) * dist + 0.5)
         if isValidDropArea(cell, cx, cy, pz) then
-            print("[t3VehicleDrop] 무작위 배치 성공 (" .. attempt .. "회차, " .. cx .. "," .. cy .. ")")
+            print("[t3VehicleDrop] Random placement found (attempt " .. attempt .. ", " .. cx .. "," .. cy .. ")")
             return cell:getGridSquare(cx, cy, pz)
         end
     end
 
-    print("[t3VehicleDrop] " .. MAX_PLACEMENT_ATTEMPTS .. "회 무작위 샘플링 실패 (" .. MIN_SEARCH_RADIUS .. "~" .. MAX_SEARCH_RADIUS .. "타일), 발밑에 강제 소환")
+    print("[t3VehicleDrop] Random sampling failed after " .. MAX_PLACEMENT_ATTEMPTS .. " attempts (" .. MIN_SEARCH_RADIUS .. "~" .. MAX_SEARCH_RADIUS .. " tiles), forcing spawn at player position")
     return player:getCurrentSquare()
 end
 
@@ -139,10 +139,10 @@ local function collectPoolVehicles()
                     if hasDriverSeat(trimmed) then
                         list[#list + 1] = trimmed
                     else
-                        print("[t3VehicleDrop] 풀 항목 제외(운전석 없음): " .. trimmed)
+                        print("[t3VehicleDrop] Pool entry excluded (no driver seat): " .. trimmed)
                     end
                 else
-                    print("[t3VehicleDrop] 풀 항목 제외(차량 스크립트 없음): " .. trimmed)
+                    print("[t3VehicleDrop] Pool entry excluded (no vehicle script): " .. trimmed)
                 end
             end
         end
@@ -154,6 +154,19 @@ end
 -- (예전엔 military 존이 하나라도 있으면 풀을 무시했는데, 그러면
 -- trafficjams 존에만 등록하는 군용차 모드(97bushmaster 등)를 풀에 넣어도
 -- 다른 military 존 모드에 가려 절대 안 뽑히는 문제가 있었다.)
+-- military 존/샌드박스 풀이 모두 비었을 때 쓰는 최후 fallback 목록 (바닐라 픽업트럭/밴 9종)
+local FALLBACK_VEHICLES = {
+    "Base.PickUpTruck",
+    "Base.PickUpTruckLights",
+    "Base.PickUpTruckLightsFire",
+    "Base.PickUpTruckMccoy",
+    "Base.PickUpVan",
+    "Base.PickUpVanLights",
+    "Base.PickUpVanLightsFire",
+    "Base.PickUpVanLightsPolice",
+    "Base.PickUpVanMccoy",
+}
+
 local function pickVehicleType()
     local merged, seen = {}, {}
     for _, ft in ipairs(collectMilitaryVehicles()) do
@@ -164,8 +177,9 @@ local function pickVehicleType()
     end
 
     if #merged == 0 then
-        print("[t3VehicleDrop] 후보 차종 없음, 최후 fallback: Base.PickUpTruck")
-        return "Base.PickUpTruck"
+        local ft = FALLBACK_VEHICLES[ZombRand(#FALLBACK_VEHICLES) + 1]
+        print("[t3VehicleDrop] No candidate vehicles, using fallback pool: " .. ft)
+        return ft
     end
     return merged[ZombRand(#merged) + 1]
 end
@@ -180,7 +194,7 @@ local MARKER_R, MARKER_G, MARKER_B = 0.1, 0.3, 0.9
 local function drawDropMarker(player, x, y)
     if isServer() then return end
     if not ISWorldMap or not ISWorldMap.ShowWorldMap then
-        print("[t3VehicleDrop] ISWorldMap 없음, 맵 심볼 표시 생략")
+        print("[t3VehicleDrop] ISWorldMap not available, skipping map symbol")
         return
     end
 
@@ -191,13 +205,13 @@ local function drawDropMarker(player, x, y)
         ISWorldMap.HideWorldMap(playerNum)
     end
     if not ISWorldMap_instance then
-        print("[t3VehicleDrop] ISWorldMap_instance 생성 실패, 맵 심볼 표시 생략")
+        print("[t3VehicleDrop] Failed to create ISWorldMap_instance, skipping map symbol")
         return
     end
 
     local symbolsAPI = ISWorldMap_instance.mapAPI and ISWorldMap_instance.mapAPI:getSymbolsAPI()
     if not symbolsAPI then
-        print("[t3VehicleDrop] symbolsAPI 조회 실패, 맵 심볼 표시 생략")
+        print("[t3VehicleDrop] Failed to get symbolsAPI, skipping map symbol")
         return
     end
 
@@ -205,7 +219,7 @@ local function drawDropMarker(player, x, y)
     sym:setRGBA(MARKER_R, MARKER_G, MARKER_B, 1.0)
     sym:setAnchor(0.5, 0.5)
     sym:setScale((ISMap and ISMap.SCALE) or 0.666)
-    print("[t3VehicleDrop] 맵 심볼 표시 완료 (" .. tostring(x) .. "," .. tostring(y) .. ")")
+    print("[t3VehicleDrop] Map symbol placed (" .. tostring(x) .. "," .. tostring(y) .. ")")
 end
 
 -- 소모된 kit 아이템의 modData에 심어둔 후원자 이름을 읽는다 (t3RandomWeapon.lua와 동일 패턴).

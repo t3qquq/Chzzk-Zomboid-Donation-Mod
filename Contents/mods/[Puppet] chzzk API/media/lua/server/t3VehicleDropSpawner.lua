@@ -104,19 +104,19 @@ local function removeAutoSpawnedKeys(vehicle)
         end
     end
 
-    print("[t3VehicleDrop] 자동 스폰 키 회수: " .. removed .. "개 (keyId " .. tostring(keyId) .. ")")
+    print("[t3VehicleDrop] Auto-spawned keys removed: " .. removed .. " (keyId " .. tostring(keyId) .. ")")
 end
 
 function t3VehicleDrop.spawnVehicle(player, x, y, z, vehicleType, sender)
     local square = getCell():getGridSquare(x, y, z)
     if not square then
-        print("[t3VehicleDrop] 좌표(" .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z) .. ") 스퀘어를 찾을 수 없음, 소환 취소")
+        print("[t3VehicleDrop] Square not found at (" .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z) .. "), spawn cancelled")
         return
     end
 
     local vehicle = addVehicleDebug(vehicleType, IsoDirections.S, nil, square)
     if not vehicle then
-        print("[t3VehicleDrop] 차량 소환 실패: " .. tostring(vehicleType))
+        print("[t3VehicleDrop] Vehicle spawn failed: " .. tostring(vehicleType))
         return
     end
 
@@ -126,7 +126,7 @@ function t3VehicleDrop.spawnVehicle(player, x, y, z, vehicleType, sender)
     local vehicleId = vehicle:getId()
     vehicle = getVehicleById(vehicleId)
     if not vehicle then
-        print("[t3VehicleDrop] 소환 후 차량 재조회 실패: " .. tostring(vehicleType))
+        print("[t3VehicleDrop] Failed to re-acquire vehicle after spawn: " .. tostring(vehicleType))
         return
     end
 
@@ -181,9 +181,9 @@ function t3VehicleDrop.spawnVehicle(player, x, y, z, vehicleType, sender)
             local keyName = (sender and sender ~= "" and (sender .. "의 ") or "") .. key:getDisplayName()
             key:setName(keyName)
             player:getInventory():AddItem(key)
-            print("[t3VehicleDrop] 솔로 키 지급 완료: " .. keyName)
+            print("[t3VehicleDrop] Solo key granted: " .. keyName)
         else
-            print("[t3VehicleDrop] 솔로 키 생성 실패 (vehicleId " .. tostring(vehicleId) .. ")")
+            print("[t3VehicleDrop] Solo key creation failed (vehicleId " .. tostring(vehicleId) .. ")")
         end
     elseif isServer() then
         -- 서버측 키를 임시 생성해 색상만 추출 (바닐라 키 색 = 차체 색 유지용)
@@ -201,8 +201,8 @@ function t3VehicleDrop.spawnVehicle(player, x, y, z, vehicleType, sender)
             sender = sender,
             vehicleId = vehicleId, -- 로그 추적용
         })
-        print("[t3VehicleDrop] GrantKey 전송 (keyId " .. tostring(vehicle:getKeyId()) .. ", vehicleId " .. tostring(vehicleId) .. ")")
+        print("[t3VehicleDrop] GrantKey sent (keyId " .. tostring(vehicle:getKeyId()) .. ", vehicleId " .. tostring(vehicleId) .. ")")
     end
 
-    print("[t3VehicleDrop] " .. tostring(vehicleType) .. " 소환 완료 (후원자: " .. tostring(sender) .. ")")
+    print("[t3VehicleDrop] " .. tostring(vehicleType) .. " spawned (donor: " .. tostring(sender) .. ")")
 end

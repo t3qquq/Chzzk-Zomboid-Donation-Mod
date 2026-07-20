@@ -64,9 +64,9 @@ function ISCraftAction:start()
         local emitter = self.character:getEmitter()
         if emitter then
             emitter:setVolume(self.craftSound, TARGET_VOLUME)
-            print("[VehicleDropCraftSound] RadioTalk 볼륨 " .. TARGET_VOLUME .. "로 낮춤")
+            print("[VehicleDropCraftSound] RadioTalk volume lowered to " .. TARGET_VOLUME)
         else
-            print("[VehicleDropCraftSound] emitter 조회 실패, 볼륨 조절 생략")
+            print("[VehicleDropCraftSound] Failed to get emitter, skipping volume adjustment")
         end
     end
 end
@@ -99,10 +99,10 @@ function ISCraftAction:update()
                     emitter:setVolume(self.t3CallSoundHandle, CALL_SOUND_VOLUME)
                 end
                 -- handle이 0/nil이면 GameSounds.getSound()가 null -> 사운드 미등록/빌드 미반영 신호
-                print("[VehicleDropCraftSound] " .. CALL_SOUND_NAME .. " 재생 시도 (jobDelta "
+                print("[VehicleDropCraftSound] " .. CALL_SOUND_NAME .. " playback attempt (jobDelta "
                     .. tostring(self:getJobDelta()) .. ", handle=" .. tostring(self.t3CallSoundHandle) .. ")")
                 if not self.t3CallSoundHandle or self.t3CallSoundHandle == 0 then
-                    print("[VehicleDropCraftSound] 경고: handle 0/nil -> 사운드 등록 실패 추정")
+                    print("[VehicleDropCraftSound] Warning: handle is 0/nil -> sound registration likely failed")
                 end
             end
         end
@@ -113,7 +113,7 @@ end
 local function stopCallSound(self)
     if self.t3CallSoundHandle and self.character:getEmitter():isPlaying(self.t3CallSoundHandle) then
         self.character:stopOrTriggerSound(self.t3CallSoundHandle)
-        print("[VehicleDropCraftSound] " .. CALL_SOUND_NAME .. " 중간 정지")
+        print("[VehicleDropCraftSound] " .. CALL_SOUND_NAME .. " stopped mid-play")
     end
 end
 

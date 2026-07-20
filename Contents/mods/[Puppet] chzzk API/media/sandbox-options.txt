@@ -169,7 +169,7 @@ option PongDu.Delay_vehicle_drop = {
 
 option PongDu.VehicleDrop_Pool = {
     type = string,
-    default = Base.PickUpTruck;Base.PickUpTruckLights;Base.PickUpTruckLightsFire;Base.PickUpTruckMccoy;Base.PickUpVan;Base.PickUpVanLights;Base.PickUpVanLightsFire;Base.PickUpVanLightsPolice;Base.PickUpVanMccoy,
+    default = Base.97bushmaster;Base.97bushAmbulance,
     page = PongDu, translation = PongDu_VehicleDrop_Pool,
 }
 
