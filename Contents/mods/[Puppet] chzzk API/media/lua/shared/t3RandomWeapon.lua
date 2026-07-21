@@ -196,6 +196,28 @@ local function qualifyItemName(name, moduleHint)
     return (moduleHint or "Base") .. "." .. name
 end
 
+-- Derive the real openable ammo box from an AmmoType full name.
+-- Naming rules verified against Arsenal / vanilla ammo scripts:
+--   Base.Bullets38  -> Base.Bullets38Box   (append "Box")
+--   Base.556Bullets -> Base.556Box         (strip "Bullets", append "Box")
+-- Candidates are validated with FindItem; nil when nothing resolves.
+local function resolveRealAmmoBox(ammoType)
+    if not ammoType or ammoType == "" then return nil end
+    local short = string.match(ammoType, "([^%.]+)$") or ammoType
+    local moduleHint = "Base"
+    if string.match(ammoType, "%.") then
+        moduleHint = string.match(ammoType, "^([^%.]+)") or "Base"
+    end
+    local stripped = string.gsub(short, "Bullets", "")
+    local candidates = { short .. "Box", stripped .. "Box" }
+    local sm = getScriptManager()
+    for _, cand in ipairs(candidates) do
+        local full = moduleHint .. "." .. cand
+        if sm:FindItem(full) then return full end
+    end
+    return nil
+end
+
 local function grant(player, itemName, donor)
     local inv = player:getInventory()
     local weapon = inv:AddItem(itemName)
@@ -208,12 +230,38 @@ local function grant(player, itemName, donor)
     end
     player:Say(weapon:getDisplayName() .. "!")
 
-    -- Ammunition package: 2 magazines + 3 ammo boxes, resolved from the
-    -- weapon's own script data. Melee weapons return nil for both getters,
-    -- so this block is a no-op for the melee box. Firearms without a
-    -- magazine (revolvers, shotguns) just skip the magazine part.
+    -- Ammunition package: 2 magazines + 3 openable ammo boxes, resolved from
+    -- the weapon's own script data. Melee weapons return nil for all getters,
+    -- so this block is a no-op for the melee box.
+    --
+    -- Loader quirk: Arsenal revolvers put a SPEEDLOADER in the AmmoBox field
+    -- (MagazineType commented out). Speedloaders carry MaxAmmo > 0 while real
+    -- ammo boxes carry none, so we probe the AmmoBox item with a temporary
+    -- instance (never added to the inventory): if it turns out to be a
+    -- loader, the loader takes the MAGAZINE role (2x) and the real box is
+    -- re-derived from AmmoType (3x). Falls back to loose rounds when no real
+    -- box can be resolved.
     local moduleHint = string.match(itemName, "^([^%.]+)") or "Base"
+    local ammoType = weapon.getAmmoType and weapon:getAmmoType()
+    local rawBox = weapon.getAmmoBox and weapon:getAmmoBox()
+    local boxName = qualifyItemName(rawBox, moduleHint)
+    local loaderName = nil
+
+    if boxName and InventoryItemFactory and InventoryItemFactory.CreateItem then
+        local probe = InventoryItemFactory.CreateItem(boxName)
+        if probe and probe.getMaxAmmo and probe:getMaxAmmo() > 0 then
+            loaderName = boxName
+            local real = resolveRealAmmoBox(ammoType)
+            print(LOG .. "AmmoBox " .. loaderName .. " is a loader (MaxAmmo=" .. probe:getMaxAmmo()
+                    .. "), real ammo box resolved: " .. tostring(real))
+            boxName = real -- may be nil -> loose rounds fallback below
+        end
+    end
+
+    -- Magazines: real MagazineType first; a detected loader takes the
+    -- magazine role for loader-fed revolvers (which have no MagazineType).
     local magType = weapon.getMagazineType and weapon:getMagazineType()
+    if not (magType and magType ~= "") then magType = loaderName end
     if magType and magType ~= "" then
         for _ = 1, MAG_COUNT do
             if not inv:AddItem(magType) then
@@ -222,8 +270,8 @@ local function grant(player, itemName, donor)
             end
         end
     end
-    local rawBox = weapon.getAmmoBox and weapon:getAmmoBox()
-    local boxName = qualifyItemName(rawBox, moduleHint)
+
+    -- Ammo boxes
     if boxName then
         for _ = 1, AMMO_BOX_COUNT do
             if not inv:AddItem(boxName) then
@@ -232,10 +280,9 @@ local function grant(player, itemName, donor)
             end
         end
     else
-        local ammoType = weapon.getAmmoType and weapon:getAmmoType()
         if ammoType and ammoType ~= "" then
             inv:AddItems(ammoType, FALLBACK_LOOSE_ROUNDS)
-            print(LOG .. "no AmmoBox on " .. itemName .. ", granted " .. FALLBACK_LOOSE_ROUNDS .. " loose rounds of " .. ammoType)
+            print(LOG .. "no ammo box for " .. itemName .. ", granted " .. FALLBACK_LOOSE_ROUNDS .. " loose rounds of " .. ammoType)
         end
     end
 end
