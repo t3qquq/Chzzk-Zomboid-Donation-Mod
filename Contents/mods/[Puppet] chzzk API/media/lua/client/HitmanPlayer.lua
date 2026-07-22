@@ -187,6 +187,10 @@ end
 local UpdateVisitedBuildings = function()
     if isServer() then return end
     local player = getSpecificPlayer(0)
+    -- ★수정: EveryTenMinutes는 캐릭터 생사/로딩 상태와 무관하게 발화하므로
+    -- 사망 직후~리스폰 전 등 player가 nil인 순간 getBuilding() 호출 시
+    -- "attempted index: getBuilding of non-table: null"로 죽는다.
+    if not player then return end
     local building = player:getBuilding()
     if building then
         local buildingDef = building:getDef()

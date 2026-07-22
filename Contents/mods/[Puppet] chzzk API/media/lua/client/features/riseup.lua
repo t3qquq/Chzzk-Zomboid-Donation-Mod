@@ -267,9 +267,15 @@ local LYING_NODES = {
 local function unpin(z, zid, rec, why)
     if not rec.pinned then return end
     rec.pinned = false
-    local ok = pcall(function() z:setReanimatedPlayer(false) end)
+    -- ★수정: 무조건 false로 밀면 좀비화 플레이어/강령술 플레이어 좀비의
+    -- 원래 isReanimatedPlayer=true(바닐라 인벤 보호 플래그)가 영구 소실된다
+    -- (DoZombieInventory: !isReanimatedPlayer()일 때만 인벤 리셋, IsoZombie:2510 /
+    --  DeadZombiePacket.parse: isReanimatedPlayer면 클라 빈 인벤으로 덮어쓰지 않음).
+    -- pin 시점에 기록해둔 원래 값(rec.origRP)으로 복원해야 안전하다.
+    local ok = pcall(function() z:setReanimatedPlayer(rec.origRP == true) end)
     print("[PongDu][RiseUp][Getup] unpin zid=" .. tostring(zid)
-        .. " why=" .. why .. " ok=" .. tostring(ok))
+        .. " why=" .. why .. " restoreTo=" .. tostring(rec.origRP == true)
+        .. " ok=" .. tostring(ok))
 end
 
 local function rescueStuck(z, zid, tries)
@@ -320,11 +326,18 @@ local function checkLaid(z, zid, rec, now)
                 local timer
                 pcall(function() timer = z:getReanimateTimer() end)
                 if timer and timer <= UNPIN_FLAG_AT then
+                    -- ★수정: 켜기 전에 원래 값을 기록해둬야 unpin에서 복원 가능.
+                    -- 일반 좀비는 orig=false라 기존과 동일하게 동작하고,
+                    -- 좀비화/강령술 플레이어 좀비는 orig=true가 보존된다.
+                    local orig
+                    pcall(function() orig = z:isReanimatedPlayer() end)
+                    rec.origRP = (orig == true)
                     local okp = pcall(function() z:setReanimatedPlayer(true) end)
                     if okp then
                         rec.pinned = true
                         print("[PongDu][RiseUp][Getup] pin zid=" .. tostring(zid)
-                            .. " timer=" .. tostring(timer))
+                            .. " timer=" .. tostring(timer)
+                            .. " origRP=" .. tostring(rec.origRP))
                     end
                 end
             end
