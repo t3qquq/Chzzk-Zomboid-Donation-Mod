@@ -387,6 +387,21 @@ option PongDu.FireSupport_Airborne = {
     page = PongDu_Dev, translation = PongDu_FireSupport_Airborne,
 }
 
+option PongDu.Sniper_Radius = {
+    type = integer, min = 10, max = 60, default = 30,
+    page = PongDu_Dev, translation = PongDu_Sniper_Radius,
+}
+
+option PongDu.Sniper_Count = {
+    type = integer, min = 1, max = 15, default = 7,
+    page = PongDu_Dev, translation = PongDu_Sniper_Count,
+}
+
+option PongDu.Sniper_Interval = {
+    type = integer, min = 200, max = 10000, default = 5000,
+    page = PongDu_Dev, translation = PongDu_Sniper_Interval,
+}
+
 /***** GENERAL *****/
 
 option Hitmans.General_KillCounter = {

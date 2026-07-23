@@ -244,6 +244,7 @@ DOServer = DOServer or {}
 DOServer["PongDuBombard"]  = DOServer["PongDuBombard"]  or {}
 DOServer["PongDuRiseUp"]   = DOServer["PongDuRiseUp"]   or {}
 DOServer["PongDuDonation"] = DOServer["PongDuDonation"] or {}
+DOServer["PongDuFireSupport"] = DOServer["PongDuFireSupport"] or {}
 
 -- ── 폭격 반경 내 차량 파괴 ────────────────────────────────────────────────────
 -- setScript()로 불탄 차량 스크립트를 씌우는 방식은 바닐라에 Burnt 변형이
@@ -335,6 +336,98 @@ local function wreckVehiclesAround(cell, cx, cy, r)
         .. " parts=" .. tostring(damaged)
         .. " glassSmashed=" .. tostring(glass)
         .. " doorsStripped=" .. tostring(doors))
+end
+
+-- ── 화력 지원 / 저격 ─────────────────────────────────────────────────────────
+-- 대상 선정을 서버가 하는 이유: 킬 자체는 좀비 소유 클라가 해야 하지만
+-- (B41 MP 좀비는 클라 권한), 각 클라가 독립적으로 "가까운 7마리"를 뽑으면
+-- 자기 소유 좀비 기준이라 총합이 7을 훌쩍 넘는다. 폭격처럼 "반경 전체"가
+-- 아니라 "정확히 N마리"가 스펙이므로 선정은 서버 권위여야 한다.
+--
+-- 우선순위: 특수좀비(modData PuppetMutant) 먼저, 같은 등급 안에서는 가까운 순.
+-- 특수좀비가 N마리에 못 미치면 나머지는 일반좀비로 채운다.
+DOServer["PongDuFireSupport"]["Sniper"] = function(player, data)
+    local r      = tonumber(data["r"])  or 30
+    local n      = tonumber(data["n"])  or 7
+    local iv     = tonumber(data["iv"]) or 700
+    local sender = data["sender"] or ""
+    local cx, cy = player:getX(), player:getY()
+    local cell   = player:getCell()
+    local zl     = cell and cell:getZombieList()
+    if not zl then
+        print("[PongDu][Sniper] ABORT: zombie list unavailable")
+        return
+    end
+
+    local r2 = r * r
+    local cand = {}
+    local mutCount = 0
+    for i = 0, zl:size() - 1 do
+        local z = zl:get(i)
+        if z and not z:isDead() then
+            local dx = z:getX() - cx
+            local dy = z:getY() - cy
+            local d2 = dx * dx + dy * dy
+            if d2 <= r2 then
+                local md = z:getModData()
+                local isMut = (md and md["PuppetMutant"]) and 1 or 0
+                mutCount = mutCount + isMut
+                cand[#cand + 1] = {
+                    id = z:getOnlineID(),
+                    x  = z:getX(), y = z:getY(), z = z:getZ(),
+                    d  = d2, m = isMut,
+                }
+            end
+        end
+    end
+
+    -- table.sort는 Kahlua TableLib에 등록돼 있지 않다
+    -- (concat/insert/remove/newarray/pairs/isempty/wipe 7개뿐).
+    -- 어차피 상위 N개만 필요하므로 선택 정렬로 N회만 뽑는다. O(N * #cand).
+    -- 소모한 후보는 table.remove 대신 false로 마킹한다 (인덱스 밀림 방지).
+    local picked = {}
+    for _ = 1, n do
+        local best, bi = nil, nil
+        for j = 1, #cand do
+            local c = cand[j]
+            if c and (best == nil
+                or c.m > best.m
+                or (c.m == best.m and c.d < best.d)) then
+                best, bi = c, j
+            end
+        end
+        if not best then break end
+        picked[#picked + 1] = { id = best.id, x = best.x, y = best.y, z = best.z }
+        cand[bi] = false
+    end
+
+    if #picked == 0 then
+        print("[PongDu][Sniper] no target in radius r=" .. tostring(r))
+        srvlog("Sniper: no target around " .. cx .. "," .. cy .. " r=" .. r)
+        return
+    end
+
+    -- 저격수 위치: 반경 밖 랜덤 방향 한 지점. 모든 탄이 같은 곳에서 날아온다
+    -- ("한 곳에 자리잡은 저격수"). r+25 타일이면 통상 줌에서 화면 밖이다.
+    local ang   = ZombRand(628) / 100.0
+    local odist = r + 25
+    local ox    = cx + math.cos(ang) * odist
+    local oy    = cy + math.sin(ang) * odist
+    local oz    = player:getZ()
+
+    local payload = {
+        ox = ox, oy = oy, oz = oz,
+        iv = iv, sender = sender, shots = picked,
+    }
+    local players = getOnlinePlayers()
+    for i = 0, players:size() - 1 do
+        sendServerCommand(players:get(i), "PongDuFireSupport", "SniperFire", payload)
+    end
+
+    print(string.format("[PongDu][Sniper] targets=%d (mutant pool=%d, total pool=%d) r=%d origin=%d,%d sender=%s",
+        #picked, mutCount, #cand, r, math.floor(ox), math.floor(oy), tostring(sender)))
+    srvlog("Sniper: " .. #picked .. " targets (mutants in radius " .. mutCount
+        .. ") around " .. cx .. "," .. cy .. " r=" .. r)
 end
 
 DOServer["PongDuBombard"]["Kaboom"] = function(player, data)
