@@ -146,6 +146,18 @@ Sandbox_KO = {
 	Sandbox_PongDu_Divider_HordeNight_tooltip = "이것은 단순한 구분선일 뿐이며 선택해도 영향을 미치지 않습니다.",
 	Sandbox_PongDu_Delay_horde_night = "발동 대기시간: 호드 나이트 (초)",
 	Sandbox_PongDu_Delay_horde_night_tooltip = "호드 나이트 후원이 대기열에 올라간 뒤 발동되기까지의 카운트다운(0~60초). 0이면 즉시 발동합니다. (기본 5)",
+	Sandbox_PongDu_Divider_FireSupport = "________ 화력 지원 ________",
+	Sandbox_PongDu_Divider_FireSupport_tooltip = "이것은 단순한 구분선일 뿐이며 선택해도 영향을 미치지 않습니다.",
+	Sandbox_PongDu_Delay_fire_support = "발동 대기시간: 화력 지원 (초)",
+	Sandbox_PongDu_Delay_fire_support_tooltip = "화력 지원 후원이 대기열에 올라간 뒤 발동되기까지의 카운트다운(0~60초). 0이면 즉시 발동합니다. (기본 5)",
+	Sandbox_PongDu_FireSupport_Sniper = "화력 지원 허용: 저격",
+	Sandbox_PongDu_FireSupport_Sniper_tooltip = "화력 지원 후원에서 저격이 등장할 수 있는지 여부. 4종을 전부 해제하면 저격으로 고정됩니다.",
+	Sandbox_PongDu_FireSupport_Drone = "화력 지원 허용: 드론",
+	Sandbox_PongDu_FireSupport_Drone_tooltip = "화력 지원 후원에서 드론이 등장할 수 있는지 여부. 4종을 전부 해제하면 저격으로 고정됩니다.",
+	Sandbox_PongDu_FireSupport_Helicopter = "화력 지원 허용: 헬기",
+	Sandbox_PongDu_FireSupport_Helicopter_tooltip = "화력 지원 후원에서 헬기가 등장할 수 있는지 여부. 4종을 전부 해제하면 저격으로 고정됩니다.",
+	Sandbox_PongDu_FireSupport_Airborne = "화력 지원 허용: 공수부대",
+	Sandbox_PongDu_FireSupport_Airborne_tooltip = "화력 지원 후원에서 공수부대가 등장할 수 있는지 여부. 4종을 전부 해제하면 저격으로 고정됩니다.",
 
 	    /***** GENERAL *****/
 

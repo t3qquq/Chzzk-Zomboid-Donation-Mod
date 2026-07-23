@@ -357,6 +357,36 @@ option PongDu.Delay_horde_night = {
     page = PongDu_Dev, translation = PongDu_Delay_horde_night,
 }
 
+option PongDu.Divider_FireSupport = {
+    type = boolean, default = false,
+    page = PongDu_Dev, translation = PongDu_Divider_FireSupport,
+}
+
+option PongDu.Delay_fire_support = {
+    type = integer, min = 0, max = 60, default = 5,
+    page = PongDu_Dev, translation = PongDu_Delay_fire_support,
+}
+
+option PongDu.FireSupport_Sniper = {
+    type = boolean, default = true,
+    page = PongDu_Dev, translation = PongDu_FireSupport_Sniper,
+}
+
+option PongDu.FireSupport_Drone = {
+    type = boolean, default = true,
+    page = PongDu_Dev, translation = PongDu_FireSupport_Drone,
+}
+
+option PongDu.FireSupport_Helicopter = {
+    type = boolean, default = true,
+    page = PongDu_Dev, translation = PongDu_FireSupport_Helicopter,
+}
+
+option PongDu.FireSupport_Airborne = {
+    type = boolean, default = true,
+    page = PongDu_Dev, translation = PongDu_FireSupport_Airborne,
+}
+
 /***** GENERAL *****/
 
 option Hitmans.General_KillCounter = {
