@@ -41,6 +41,15 @@ local KIND_OPTION = {
     airborne   = "FireSupport_Airborne",
 }
 
+-- 어떤 종류가 뽑혔는지 후원받은 플레이어가 직접 외친다 (player:Say).
+-- skillpotion.lua/invsave.lua와 동일한 방식 -- 채팅 로그 + 말풍선.
+local KIND_SAY = {
+    sniper     = "IGUI_donation_fire_support_sniper",
+    drone      = "IGUI_donation_fire_support_drone",
+    helicopter = "IGUI_donation_fire_support_helicopter",
+    airborne   = "IGUI_donation_fire_support_airborne",
+}
+
 local function pickKind()
     local sv = SandboxVars and SandboxVars.PongDu
     local pool = {}
@@ -51,6 +60,41 @@ local function pickKind()
     end
     if #pool == 0 then return "sniper" end
     return pool[ZombRand(#pool) + 1]
+end
+
+-- ── 샌드박스 옵션 (사용 시점에 읽음 -- 파일 로드 시점엔 SandboxVars 비어있음) ──
+-- zombierain.rainCfg() / randomteleport.distCfg() 와 같은 형태.
+--
+-- 값의 출처는 sandbox-options.txt 하나뿐이다. 등록된 옵션은
+-- SandboxOptions.toLua() -> SandboxOption.toTable() 이 SandboxVars 에 무조건
+-- rawset 하므로 (SandboxOptions.java:1355) 게임 로드 후엔 nil 이 될 수 없다.
+-- 옵션 추가 전에 만든 구 세이브도 initSandboxVars() 가 fromTable -> toTable
+-- 순으로 돌아 sandbox-options.txt 의 default 가 채워진다.
+-- 따라서 nil 이라는 건 sandbox-options.txt 등록 실패(오타/파싱 에러)뿐이고,
+-- 그 상황에서 조용히 매직넘버로 굴러가면 샌박을 아무리 돌려도 안 먹는데
+-- 로그가 안 남는다. 아래 비상값은 "후원이 통째로 먹통이 되지 않게" 하는
+-- 최후 방어일 뿐 기본값이 아니므로, 탈 때마다 반드시 로그를 남긴다.
+-- (기존 코드는 여기에 or 700 이 박혀 있었고 샌박 5000 과 조용히 어긋나 있었다.)
+local _optWarned = {}
+
+local function svInt(name, emergency)
+    local sv = SandboxVars and SandboxVars.PongDu
+    local v  = sv and tonumber(sv[name])
+    if v then return v end
+    if not _optWarned[name] then
+        _optWarned[name] = true
+        print("[PongDu] SANDBOX OPTION MISSING: PongDu." .. tostring(name)
+            .. " -- check sandbox-options.txt registration, falling back to "
+            .. tostring(emergency))
+    end
+    return emergency
+end
+
+-- 저격 파라미터: Sniper_Radius / Sniper_Count / Sniper_Interval(ms).
+local function sniperCfg()
+    return svInt("Sniper_Radius", 30),
+           svInt("Sniper_Count", 10),
+           svInt("Sniper_Interval", 3000)
 end
 
 -- ── 종류별 실행부 (전부 미구현) ────────────────────────────────────────────
@@ -65,10 +109,7 @@ local runners = {}
 -- 기준이라 총합이 N을 넘어버린다(폭격처럼 반경 전체 킬이 아니라 "N마리"가
 -- 스펙이므로 서버 권위 선정이 필수).
 runners.sniper = function(player, sender)
-    local sv = SandboxVars and SandboxVars.PongDu
-    local radius   = (sv and tonumber(sv.Sniper_Radius))   or 30
-    local count    = (sv and tonumber(sv.Sniper_Count))    or 7
-    local interval = (sv and tonumber(sv.Sniper_Interval)) or 700
+    local radius, count, interval = sniperCfg()
     print(string.format("[PongDu] fire_support/sniper request r=%d n=%d interval=%d",
         radius, count, interval))
     sendClientCommand("PongDuFireSupport", "Sniper", {
@@ -106,6 +147,11 @@ function _a.a(player, sender)
     print(string.format("[PongDu] fire_support START kind=%s sender=%s x=%d y=%d",
         tostring(kind), tostring(sender or ""),
         math.floor(player:getX()), math.floor(player:getY())))
+
+    local sayKey = KIND_SAY[kind]
+    if sayKey then
+        pcall(function() player:Say(getText(sayKey)) end)
+    end
 
     local run = runners[kind]
     if not run then
@@ -174,10 +220,10 @@ local function drawTracers()
             local y1 = math.floor(sy + (ey - sy) * a1)
             local x2 = math.floor(sx + (ex - sx) * a2)
             local y2 = math.floor(sy + (ey - sy) * a2)
-            -- 외곽(어둡고 넓게) -> 심지(밝게) 순으로 3줄
-            renderer:renderline(TRACER_TEX, x1, y1 - 1, x2, y2 - 1, 1, 0.86, 0.45, 0.35)
-            renderer:renderline(TRACER_TEX, x1, y1 + 1, x2, y2 + 1, 1, 0.86, 0.45, 0.35)
-            renderer:renderline(TRACER_TEX, x1, y1,     x2, y2,     1, 1,    0.90, 0.90)
+            -- 두께: 히트맨 예광탄과 동일하게 단선 1줄로 되돌림(±1px 오프셋
+            -- 외곽 2줄 제거). 알파(0.90)/색만 그대로 유지 -- 히트맨의 0.14보다
+            -- 훨씬 밝게 보이는 건 의도한 그대로다.
+            renderer:renderline(TRACER_TEX, x1, y1, x2, y2, 1, 1, 0.90, 0.90)
             -- 총구 화염: 처음 두 프레임만 원점에 짧고 밝게
             if tr.t < TRACER_STEP * 2 then
                 local fx = math.floor(sx + (ex - sx) * 0.03)
@@ -204,10 +250,11 @@ end
 Events.OnPreUIDraw.Add(drawTracers)
 
 -- ═══════════════════════════════════════════════════════════════════════════
---  사격 큐 (저격 공용)
+--  사격 처리 (저격 공용)
+--  타이밍/대상 재선정은 이제 서버 job(server.lua processSniperJobs)이 맡는다.
+--  서버가 iv 간격으로 한 발씩 SniperFire를 보내므로, 클라는 큐잉/지연 없이
+--  수신 즉시 그 한 발을 처리하면 된다.
 -- ═══════════════════════════════════════════════════════════════════════════
-
-local _shots = {}
 
 local function findZombieById(id)
     local cell = getCell()
@@ -222,99 +269,122 @@ end
 
 -- 즉사 처리. B41 MP에서 좀비는 클라 권한이므로 소유 클라에서만 호출해야 한다
 -- (서버 setHealth는 소유 클라 동기화 패킷에 덮인다).
--- bombard.killZombiesAround와 같은 시퀀스지만 clearAttachedItems()는 부르지
--- 않는다 -- 지원 계열은 시체 아이템 손실이 없어야 하고, 이 호출이 시체 아이템
--- 증발 버그의 원인 후보다.
+--
+-- 구현: 히트맨 사격(HitmanZombieActions/ZAShoot.lua hit())과 동일 경로.
+-- 기존엔 setHealth(0) + becomeCorpse()로 즉시 시체화했는데, becomeCorpse가
+-- 사망 애니메이션을 통째로 건너뛰어 "그냥 픽 사라지는" 밋밋한 연출이 됐다.
+-- 대신 실제 총기로 Hit()을 먹인다:
+--   IsoGameCharacter.hitConsequences (IsoGameCharacter.java:5523)
+--     -> 조준총기면 Health -= damage * 0.7  -> isDead()면 Kill(wielder)
+--   즉 데미지만 충분히 크면 확정 1발 즉사 + 바닐라 총격 사망 모션이 그대로 나온다.
+--
+-- 어그로가 붙지 않는 이유 (설계 제약 3 유지):
+--   Hit() 내부에서 wielder:addWorldSoundUnlessInvisible(5,1,false)를 부르지만,
+--   IsoCell.getFakeZombieForHit()은 new IsoZombie(cell)만 하고 좌표를 잡지 않아
+--   항상 0,0에 있다. 즉 소리가 맵 구석에서 나므로 플레이어 주변 영향 0.
+--   hitConsequences의 setTarget(wielder)도 fakeZombie를 가리키므로 플레이어를
+--   물지 않는다.
+--
+-- clearAttachedItems()는 여전히 부르지 않는다 -- 지원 계열은 시체 아이템 손실이
+-- 없어야 하고, 이 호출이 시체 아이템 증발 버그의 원인 후보다.
+--
+-- 알려진 한계(연출): hitDir이 wielder(0,0) 기준이라 넘어지는 방향이 항상 같다.
+-- 저격수 방향으로 넘기려면 엔진 공용 fakeZombie의 좌표를 건드려야 해서 보류.
+local SNIPER_DMG = 500       -- 좀비 체력 대비 압도적. 무기 숙련 보정을 먹어도 확정 킬.
+local _sniperGun = nil       -- HandWeapon 캐시. 매 발 생성하면 GC 낭비.
+
+-- Base.HuntingRifle = MSR788 Rifle (items_weapons.txt:5209).
+-- 이미 쓰고 있는 총성 "MSR788Shoot"과 같은 총이고 IsAimedFirearm=TRUE라
+-- hitConsequences의 *0.7 경로를 탄다.
+local function sniperWeapon()
+    if _sniperGun then return _sniperGun end
+    local ok, item = pcall(function()
+        return InventoryItemFactory.CreateItem("Base.HuntingRifle")
+    end)
+    if ok and item then
+        _sniperGun = item
+    else
+        print("[PongDu] fire_support/sniper: weapon item creation failed, using fallback kill")
+    end
+    return _sniperGun
+end
+
 local function killZombieNow(z)
     local cell = getCell()
     if not cell then return end
-    z:setCrawler(true)
-    z:setHealth(0)
-    z:changeState(ZombieOnGroundState.instance())
-    z:setAttackedBy(cell:getFakeZombieForHit())
-    z:becomeCorpse()
-end
-
-local function processShots()
-    if #_shots == 0 then return end
-    local now = getTimestampMs()
-    for i = #_shots, 1, -1 do
-        local sh = _shots[i]
-        if now >= sh.at then
-            table.remove(_shots, i)
-            local z = findZombieById(sh.id)
-            -- 서버가 보낸 좌표는 선정 시점 값이라 좀비가 움직였을 수 있다.
-            -- 살아있으면 현재 좌표로 조준한다.
-            local tx, ty, tz = sh.x, sh.y, sh.z
-            if z then tx, ty, tz = z:getX(), z:getY(), z:getZ() end
-            addTracer(sh.ox, sh.oy, sh.oz, tx, ty, tz)
-
-            -- 총성: 비위치성 로컬 재생. addSound()를 부르지 않으므로 어그로 0.
-            local okS = pcall(function()
-                getSoundManager():PlaySound("MSR788Shoot", false, 1.0)
-            end)
-            if not okS then print("[PongDu] fire_support/sniper: shot sound failed") end
-
-            if z and not z:isDead() then
-                if z:isRemoteZombie() then
-                    -- 소유 클라가 아님 -> 연출만. 킬은 소유 클라가 수행한다.
-                    pcall(function() z:playSound("BulletHitBody") end)
-                else
-                    local ok, err = pcall(function() killZombieNow(z) end)
-                    if ok then
-                        pcall(function() z:playSound("BulletHitBody") end)
-                        print("[PongDu] fire_support/sniper KILL zid=" .. tostring(sh.id))
-                    else
-                        print("[PongDu] fire_support/sniper KILL FAILED zid="
-                            .. tostring(sh.id) .. " err=" .. tostring(err))
-                    end
-                end
-            else
-                print("[PongDu] fire_support/sniper: target gone zid=" .. tostring(sh.id))
-            end
-        end
+    local fake = cell:getFakeZombieForHit()
+    local gun  = sniperWeapon()
+    if not gun then
+        -- 폴백: 총기 생성 실패 시 구 경로(모션 없음)로라도 확실히 죽인다.
+        z:setHealth(0)
+        z:changeState(ZombieOnGroundState.instance())
+        z:setAttackedBy(fake)
+        z:becomeCorpse()
+        return
     end
+    z:setBumpDone(true)
+    z:setHitReaction("ShotBelly")
+    z:Hit(gun, fake, SNIPER_DMG, false, 1, false)
+    z:setAttackedBy(fake)
 end
 
-Events.OnTick.Add(processShots)
-
--- 서버가 산출한 사격 명령 수신. 전 클라에 브로드캐스트되며, 각 클라는
--- 연출을 전부 그리되 킬은 자기가 소유한 좀비에 대해서만 수행한다.
+-- 서버가 iv 간격으로 한 발씩 보내는 사격 명령 수신. 전 클라에 브로드캐스트되며,
+-- 각 클라는 연출(예광탄+총성)을 전부 그리되 킬은 자기가 소유한 좀비에 대해서만
+-- 수행한다. 대상 선정/재선정과 타이밍은 전부 server.lua의 processSniperJobs가
+-- 맡으므로, 여기서는 큐잉 없이 수신 즉시 그 한 발을 처리한다.
 Events.OnServerCommand.Add(function(module, command, args)
     if module ~= "PongDuFireSupport" then return end
     if command ~= "SniperFire" then return end
-    if not args or not args.shots then return end
+    if not args then return end
 
-    local iv  = tonumber(args.iv) or 700
-    local ox  = tonumber(args.ox) or 0
-    local oy  = tonumber(args.oy) or 0
-    local oz  = tonumber(args.oz) or 0
-    local now = getTimestampMs()
-    local n   = 0
+    local ox = tonumber(args.ox) or 0
+    local oy = tonumber(args.oy) or 0
+    local oz = tonumber(args.oz) or 0
+    local id = tonumber(args.id)
 
-    for idx, sh in ipairs(args.shots) do
-        local id = tonumber(sh.id)
-        if id then
-            n = n + 1
-            _shots[#_shots + 1] = {
-                at = now + (idx - 1) * iv,
-                id = id,
-                x  = tonumber(sh.x) or 0,
-                y  = tonumber(sh.y) or 0,
-                z  = tonumber(sh.z) or 0,
-                ox = ox, oy = oy, oz = oz,
-            }
-        end
+    if not id then
+        -- 서버 job이 이번 발엔 반경 내 대상을 못 찾은 경우(MISS). 연출 없이 스킵.
+        print("[PongDu] fire_support/sniper: shot MISS (no target in radius)")
+        return
     end
-    print(string.format("[PongDu] fire_support/sniper SniperFire received shots=%d interval=%d origin=%d,%d",
-        n, iv, math.floor(ox), math.floor(oy)))
+
+    local z = findZombieById(id)
+    -- 서버가 보낸 좌표는 선정 시점 값이라 좀비가 그 사이 움직였을 수 있다.
+    -- 살아있으면 현재 좌표로 조준한다.
+    local tx, ty, tz = tonumber(args.x) or 0, tonumber(args.y) or 0, tonumber(args.z) or 0
+    if z then tx, ty, tz = z:getX(), z:getY(), z:getZ() end
+    addTracer(ox, oy, oz, tx, ty, tz)
+
+    -- 총성: 비위치성 로컬 재생. addSound()를 부르지 않으므로 어그로 0.
+    local okS = pcall(function()
+        getSoundManager():PlaySound("AWP_Bang", false, 0.8)
+    end)
+    if not okS then print("[PongDu] fire_support/sniper: shot sound failed") end
+
+    if z and not z:isDead() then
+        if z:isRemoteZombie() then
+            -- 소유 클라가 아님 -> 연출만. 킬은 소유 클라가 수행한다.
+            pcall(function() z:playSound("BulletHitBody") end)
+        else
+            local ok, err = pcall(function() killZombieNow(z) end)
+            if ok then
+                pcall(function() z:playSound("BulletHitBody") end)
+                print("[PongDu] fire_support/sniper KILL zid=" .. tostring(id))
+            else
+                print("[PongDu] fire_support/sniper KILL FAILED zid="
+                    .. tostring(id) .. " err=" .. tostring(err))
+            end
+        end
+    else
+        print("[PongDu] fire_support/sniper: target gone zid=" .. tostring(id))
+    end
 end)
 
--- b(): 진행 중인 화력 지원을 전부 정리한다 (예광탄 + 대기 중인 사격).
--- 플레이어 사망/접속 종료 시 호출할 것. [public name: .b]
+-- b(): 진행 중인 화력 지원 연출을 전부 정리한다 (예광탄).
+-- 사격 타이밍/잔여 발수는 이제 서버 job이 들고 있으므로 클라에서 정리할
+-- 큐가 없다. 플레이어 사망/접속 종료 시 호출할 것. [public name: .b]
 function _a.b()
     _tracers = {}
-    _shots   = {}
 end
 
 return _a

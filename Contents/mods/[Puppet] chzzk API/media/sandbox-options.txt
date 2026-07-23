@@ -393,12 +393,12 @@ option PongDu.Sniper_Radius = {
 }
 
 option PongDu.Sniper_Count = {
-    type = integer, min = 1, max = 15, default = 7,
+    type = integer, min = 1, max = 15, default = 10,
     page = PongDu_Dev, translation = PongDu_Sniper_Count,
 }
 
 option PongDu.Sniper_Interval = {
-    type = integer, min = 200, max = 10000, default = 5000,
+    type = integer, min = 200, max = 10000, default = 3000,
     page = PongDu_Dev, translation = PongDu_Sniper_Interval,
 }
 

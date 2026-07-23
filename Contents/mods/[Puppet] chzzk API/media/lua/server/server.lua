@@ -346,89 +346,99 @@ end
 --
 -- 우선순위: 특수좀비(modData PuppetMutant) 먼저, 같은 등급 안에서는 가까운 순.
 -- 특수좀비가 N마리에 못 미치면 나머지는 일반좀비로 채운다.
+-- 저격수는 "한 곳에 자리잡고" 쏘지만, 대상은 매 발마다 다시 고른다 --
+-- 플레이어가 반경 안에서 움직이면 그때그때 플레이어와 가장 가까운(특좀 우선)
+-- 좀비를 노려야 하므로, 발동 시점에 N마리를 한꺼번에 스냅샷해서 순차 처리하면
+-- 안 된다(그 사이 좀비가 죽거나 자리를 뜨면 허공에 쏘거나 뒤늦게 안 맞는
+-- 문제가 생긴다). 대신 job을 큐에 넣고 매 iv마다 그 시점의 플레이어 좌표
+-- 기준으로 재선정한다.
+local _sniperJobs = {}
+
 DOServer["PongDuFireSupport"]["Sniper"] = function(player, data)
     local r      = tonumber(data["r"])  or 30
-    local n      = tonumber(data["n"])  or 7
-    local iv     = tonumber(data["iv"]) or 700
+    local n      = tonumber(data["n"])  or 10
+    local iv     = tonumber(data["iv"]) or 3000
     local sender = data["sender"] or ""
-    local cx, cy = player:getX(), player:getY()
-    local cell   = player:getCell()
-    local zl     = cell and cell:getZombieList()
-    if not zl then
-        print("[PongDu][Sniper] ABORT: zombie list unavailable")
-        return
-    end
 
-    local r2 = r * r
-    local cand = {}
-    local mutCount = 0
+    -- 저격수 위치는 발동 시점 1회만 고정("한 곳에 자리잡은 저격수").
+    -- r+25 타일 거리면 통상 줌에서 화면 밖이다.
+    local cx, cy = player:getX(), player:getY()
+    local ang    = ZombRand(628) / 100.0
+    local odist  = r + 25
+    local ox     = cx + math.cos(ang) * odist
+    local oy     = cy + math.sin(ang) * odist
+    local oz     = player:getZ()
+
+    _sniperJobs[#_sniperJobs + 1] = {
+        player = player, r = r, iv = iv, sender = sender,
+        ox = ox, oy = oy, oz = oz,
+        remaining = n, nextAt = getTimestampMs(),
+        shotZids = {},   -- 이 job에서 이미 쏜 zid는 재선정 대상에서 제외
+    }
+
+    print(string.format("[PongDu][Sniper] job queued n=%d r=%d iv=%d origin=%d,%d sender=%s",
+        n, r, iv, math.floor(ox), math.floor(oy), tostring(sender)))
+end
+
+-- job.player의 "현재" 좌표 기준으로 반경 내 미사살 좀비 중 최우선(특좀 > 근접) 1마리.
+local function pickSniperTarget(job)
+    local ok, cx, cy, cell = pcall(function()
+        return job.player:getX(), job.player:getY(), job.player:getCell()
+    end)
+    if not ok then return nil end
+    local zl = cell and cell:getZombieList()
+    if not zl then return nil end
+
+    local r2 = job.r * job.r
+    local best, bd, bm = nil, nil, -1
     for i = 0, zl:size() - 1 do
         local z = zl:get(i)
-        if z and not z:isDead() then
-            local dx = z:getX() - cx
-            local dy = z:getY() - cy
+        if z and not z:isDead() and not job.shotZids[z:getOnlineID()] then
+            local dx, dy = z:getX() - cx, z:getY() - cy
             local d2 = dx * dx + dy * dy
             if d2 <= r2 then
                 local md = z:getModData()
                 local isMut = (md and md["PuppetMutant"]) and 1 or 0
-                mutCount = mutCount + isMut
-                cand[#cand + 1] = {
-                    id = z:getOnlineID(),
-                    x  = z:getX(), y = z:getY(), z = z:getZ(),
-                    d  = d2, m = isMut,
-                }
+                if isMut > bm or (isMut == bm and d2 < (bd or math.huge)) then
+                    best, bd, bm = z, d2, isMut
+                end
             end
         end
     end
-
-    -- table.sort는 Kahlua TableLib에 등록돼 있지 않다
-    -- (concat/insert/remove/newarray/pairs/isempty/wipe 7개뿐).
-    -- 어차피 상위 N개만 필요하므로 선택 정렬로 N회만 뽑는다. O(N * #cand).
-    -- 소모한 후보는 table.remove 대신 false로 마킹한다 (인덱스 밀림 방지).
-    local picked = {}
-    for _ = 1, n do
-        local best, bi = nil, nil
-        for j = 1, #cand do
-            local c = cand[j]
-            if c and (best == nil
-                or c.m > best.m
-                or (c.m == best.m and c.d < best.d)) then
-                best, bi = c, j
-            end
-        end
-        if not best then break end
-        picked[#picked + 1] = { id = best.id, x = best.x, y = best.y, z = best.z }
-        cand[bi] = false
-    end
-
-    if #picked == 0 then
-        print("[PongDu][Sniper] no target in radius r=" .. tostring(r))
-        srvlog("Sniper: no target around " .. cx .. "," .. cy .. " r=" .. r)
-        return
-    end
-
-    -- 저격수 위치: 반경 밖 랜덤 방향 한 지점. 모든 탄이 같은 곳에서 날아온다
-    -- ("한 곳에 자리잡은 저격수"). r+25 타일이면 통상 줌에서 화면 밖이다.
-    local ang   = ZombRand(628) / 100.0
-    local odist = r + 25
-    local ox    = cx + math.cos(ang) * odist
-    local oy    = cy + math.sin(ang) * odist
-    local oz    = player:getZ()
-
-    local payload = {
-        ox = ox, oy = oy, oz = oz,
-        iv = iv, sender = sender, shots = picked,
-    }
-    local players = getOnlinePlayers()
-    for i = 0, players:size() - 1 do
-        sendServerCommand(players:get(i), "PongDuFireSupport", "SniperFire", payload)
-    end
-
-    print(string.format("[PongDu][Sniper] targets=%d (mutant pool=%d, total pool=%d) r=%d origin=%d,%d sender=%s",
-        #picked, mutCount, #cand, r, math.floor(ox), math.floor(oy), tostring(sender)))
-    srvlog("Sniper: " .. #picked .. " targets (mutants in radius " .. mutCount
-        .. ") around " .. cx .. "," .. cy .. " r=" .. r)
+    return best
 end
+
+local function processSniperJobs()
+    if #_sniperJobs == 0 then return end
+    local now = getTimestampMs()
+    for i = #_sniperJobs, 1, -1 do
+        local job = _sniperJobs[i]
+        if job.remaining <= 0 then
+            table.remove(_sniperJobs, i)
+        elseif now >= job.nextAt then
+            local target  = pickSniperTarget(job)
+            local payload = { ox = job.ox, oy = job.oy, oz = job.oz, sender = job.sender }
+            if target then
+                local zid = target:getOnlineID()
+                job.shotZids[zid] = true
+                payload.id = zid
+                payload.x, payload.y, payload.z = target:getX(), target:getY(), target:getZ()
+                print("[PongDu][Sniper] shot zid=" .. zid .. " remaining_after=" .. (job.remaining - 1))
+            else
+                print("[PongDu][Sniper] shot MISS: no target in radius r=" .. job.r)
+            end
+
+            local players = getOnlinePlayers()
+            for k = 0, players:size() - 1 do
+                sendServerCommand(players:get(k), "PongDuFireSupport", "SniperFire", payload)
+            end
+
+            job.remaining = job.remaining - 1
+            job.nextAt    = now + job.iv
+        end
+    end
+end
+Events.OnTick.Add(processSniperJobs)
 
 DOServer["PongDuBombard"]["Kaboom"] = function(player, data)
     local cx = player:getX()

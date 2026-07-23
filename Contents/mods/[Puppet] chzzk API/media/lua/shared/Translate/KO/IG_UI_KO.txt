@@ -92,6 +92,11 @@ IGUI_KO = {
     
     IGUI_donation_rise_up_dead_man = "라이즈 업 데드 맨",
     IGUI_donation_zombie_rain = "좀비 레인",
+    IGUI_donation_fire_support = "화력 지원",
+    IGUI_donation_fire_support_sniper = "저격 지원이다! 특수좀비부터 제거해!!",
+    IGUI_donation_fire_support_drone = "드론이 엄호한다!",
+    IGUI_donation_fire_support_helicopter = "헬기다! 전부 갈아버려!",
+    IGUI_donation_fire_support_airborne = "지원 병력이 도착했다!!",
 
 
 	IGUI_donation_zombie_owner = "의 좀비",

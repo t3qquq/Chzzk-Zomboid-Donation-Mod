@@ -163,7 +163,7 @@ Sandbox_KO = {
 	Sandbox_PongDu_Sniper_Count = "저격: 최대 사살 수",
 	Sandbox_PongDu_Sniper_Count_tooltip = "한 번의 저격 지원으로 사살하는 최대 좀비 수입니다. 특수좀비를 우선 사살하고, 특수좀비가 부족하면 가까운 일반좀비로 채웁니다. (기본 7)",
 	Sandbox_PongDu_Sniper_Interval = "저격: 발사 간격 (밀리초)",
-	Sandbox_PongDu_Sniper_Interval_tooltip = "저격탄이 한 발씩 날아오는 간격입니다. 값이 작을수록 빠르게 연사합니다. (기본 5000)",
+	Sandbox_PongDu_Sniper_Interval_tooltip = "저격탄이 한 발씩 날아오는 간격입니다. 값이 작을수록 빠르게 연사합니다. (기본 3000 = 3초)",
 
 	    /***** GENERAL *****/
 
