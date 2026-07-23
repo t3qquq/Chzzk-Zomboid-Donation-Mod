@@ -245,39 +245,96 @@ DOServer["PongDuBombard"]  = DOServer["PongDuBombard"]  or {}
 DOServer["PongDuRiseUp"]   = DOServer["PongDuRiseUp"]   or {}
 DOServer["PongDuDonation"] = DOServer["PongDuDonation"] or {}
 
--- 폭격 반경 내 차량을 완전 고철화한다.
+-- ── 폭격 반경 내 차량 파괴 ────────────────────────────────────────────────────
 -- setScript()로 불탄 차량 스크립트를 씌우는 방식은 바닐라에 Burnt 변형이
--- 19종밖에 없어 전 차종을 커버하지 못하므로, 모든 파츠 내구도를 0으로
--- 내리는 방식으로 처리한다(모델 교체 없음 = 차종 제한 없음).
--- 차량은 좀비와 달리 서버 권위이므로 서버에서 변경 후
--- transmitPartCondition()으로 클라에 전파해야 한다.
+-- 19종밖에 없어 전 차종을 커버하지 못하므로, 파츠 단위로 처리한다.
+-- 차량은 좀비와 달리 서버 권위이므로 서버에서 변경 후 transmit*()으로 전파.
+local BOMBARD_DOOR_STRIP_CHANCE = 50   -- 문짝(후드/트렁크 포함)이 뜯겨나갈 확률(%)
+
+-- 파츠 하나를 바닐라 uninstall 경로 그대로 뜯어낸다.
+-- (VehicleCommands.uninstallPart / VehicleUtils.RemoveTire와 동일한 순서)
+--   setInventoryItem(nil) -> uninstall.complete 콜백 -> transmitPartItem
+-- setInventoryItem(nil)은 itemContainer를 건드리지 않으므로 트렁크/시트/
+-- 글로브박스 내용물은 영향 없음(VehiclePart.java 134번 라인 확인).
+local function stripVehiclePart(v, part)
+    local item = part:getInventoryItem()
+    if not item then return false end
+    part:setInventoryItem(nil)
+    local tbl = part:getTable("uninstall")
+    if tbl and tbl.complete and VehicleUtils and VehicleUtils.callLua then
+        VehicleUtils.callLua(tbl.complete, v, part, item)
+    end
+    v:transmitPartItem(part)
+    return true
+end
+
 local function wreckVehiclesAround(cell, cx, cy, r)
     if not cell then return end
     local vehicles = cell:getVehicles()
     if not vehicles then return end
-    local wrecked, parts = 0, 0
+    local wrecked, damaged, glass, doors = 0, 0, 0, 0
     for i = 0, vehicles:size() - 1 do
         local v = vehicles:get(i)
         if v and not v:isRemovedFromWorld() then
             local dist = math.sqrt(math.pow(v:getX() - cx, 2) + math.pow(v:getY() - cy, 2))
             if dist < r then
-                local n = v:getPartCount()
-                for pi = 0, n - 1 do
+                for pi = 0, v:getPartCount() - 1 do
                     local part = v:getPartByIndex(pi)
-                    if part and part:getCondition() > 0 then
+                    if part then
                         local ok, err = pcall(function()
-                            part:setCondition(0)
-                            v:transmitPartCondition(part)
+                            local window = part:getWindow()
+                            local door   = part:getDoor()
+
+                            -- 문짝(승하차문 + 후드 EngineDoor + 트렁크문 TrunkDoor)은
+                            -- 확률적으로 통째로 뜯어낸다.
+                            if door ~= nil and ZombRand(100) < BOMBARD_DOOR_STRIP_CHANCE then
+                                if stripVehiclePart(v, part) then doors = doors + 1 end
+                            end
+
+                            -- 창문/유리는 뜯어내지 않고 "깨진 상태"로 만든다.
+                            -- VehiclePart.damage()가 window 유무를 알아서 분기한다
+                            -- (VehiclePart.java 832번). window 쪽으로 가면 유리 파편
+                            -- 생성 + SmashWindow 사운드 + transmitPartWindow까지 처리됨
+                            -- (VehicleWindow.java 79번, 서버 브랜치).
+                            -- 창문이 열려 있으면 isHittable()이 false라 damage가 먹지 않으므로
+                            -- 먼저 닫아준다.
+                            if window ~= nil and window:isOpen() then
+                                window:setOpen(false)
+                                v:transmitPartWindow(part)
+                            end
+
+                            if part:getCondition() > 0 then
+                                part:damage(100)
+                                if window ~= nil then glass = glass + 1 end
+                            end
+
+                            -- damage()가 안 먹은 파츠(열린 창문 등)는 강제로 0.
+                            if part:getCondition() > 0 then
+                                part:setCondition(0)
+                                v:transmitPartCondition(part)
+                            end
+                            damaged = damaged + 1
                         end)
-                        if ok then parts = parts + 1
-                        else srvlog("wreckVehicle part ERROR id=" .. tostring(part:getId()) .. " " .. tostring(err)) end
+                        if not ok then
+                            srvlog("wreckVehicle part ERROR id=" .. tostring(part:getId()) .. " " .. tostring(err))
+                        end
                     end
                 end
+                -- 폐차 연출: 녹 최대치 + 데미지 텍스처 갱신.
+                -- setRust/transmitRust는 바닐라 Commands.setRust와 동일한 경로.
+                pcall(function()
+                    v:setRust(1.0)
+                    v:transmitRust()
+                    v:doDamageOverlay()
+                end)
                 wrecked = wrecked + 1
             end
         end
     end
-    srvlog("wreckVehiclesAround done vehicles=" .. tostring(wrecked) .. " parts=" .. tostring(parts))
+    srvlog("wreckVehiclesAround done vehicles=" .. tostring(wrecked)
+        .. " parts=" .. tostring(damaged)
+        .. " glassSmashed=" .. tostring(glass)
+        .. " doorsStripped=" .. tostring(doors))
 end
 
 DOServer["PongDuBombard"]["Kaboom"] = function(player, data)
