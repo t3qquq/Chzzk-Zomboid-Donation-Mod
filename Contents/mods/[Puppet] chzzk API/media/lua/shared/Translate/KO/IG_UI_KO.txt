@@ -45,6 +45,8 @@ IGUI_KO = {
     IGUI_donation_backroom = "백룸 탈출",
 	
     IGUI_donation_bombard = "미사일 폭격",
+    IGUI_donation_bombard_guided = "유도 폭격",
+    IGUI_donation_bombard_support = "지원 폭격",
 	
     IGUI_donation_random_skill_potion = "신체 강화 혈청",
 	IGUI_serum_supreme_say = "뭐지...!!?!",

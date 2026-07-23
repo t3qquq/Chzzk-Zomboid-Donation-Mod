@@ -214,9 +214,25 @@ local function donationTextArg(featureId)
     return nil
 end
 
+-- featureId -> 실제로 쓸 번역 키. 대부분은 labelKey 그대로지만, 샌드박스 설정에 따라
+-- 표시 이름 자체가 갈리는 효과가 있어서 사용 시점에 한 번 더 걸러준다.
+-- missile: PongDu.Bombard_Injure(플레이어 부상 여부)에 따라
+--   켜짐 -> "유도 폭격" (플레이어도 맞음), 꺼짐 -> "지원 폭격" (플레이어는 안 맞음).
+-- SandboxVars는 게임 로드 후에만 존재하므로 파일 로드 시점이 아니라 여기서 읽는다.
+local function resolveLabelKey(featureId)
+    if featureId == "missile" then
+        local sv = SandboxVars and SandboxVars.PongDu
+        if sv ~= nil and sv.Bombard_Injure == true then
+            return "IGUI_donation_bombard_guided"
+        end
+        return "IGUI_donation_bombard_support"
+    end
+    return labelKey[featureId]
+end
+
 -- 순수 효과 이름만 (후원 메시지 안 붙임) -- 큐박스 호버 툴팁 전용.
 local function effectName(featureId)
-    local key = labelKey[featureId]
+    local key = resolveLabelKey(featureId)
     if not key then return "Effect " .. tostring(featureId) end
     local arg = donationTextArg(featureId)
     return arg and getText(key, arg) or getText(key)
