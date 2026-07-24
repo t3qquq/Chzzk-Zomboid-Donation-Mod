@@ -453,7 +453,6 @@ local _heliVid    = nil   -- 서버가 준 VehicleID
 local _amPilot    = false -- 내가 물리 권한 클라인가 (HeliStart의 pilot == 내 onlineID)
 local _wFieldNum  = nil   -- tempTransform 자바 필드 인덱스 캐시 (클래스 고정이라 재사용)
 local _heliWarned = false -- "차량 미스트리밍" 로그 1회 제한
-local _polyDirtyWarned = false -- polyDirty 대입 실패 로그 1회 제한
 local _bladeInit  = false -- 첫 틱에 블레이드 전체 숨김 수행 여부
 local _bladeStep  = 0
 
@@ -512,6 +511,7 @@ local function heliSetYaw(v)
     local dx, dy = _heliPath.bx - _heliPath.ax, _heliPath.by - _heliPath.ay
     if dx == 0 and dy == 0 then return end
     local yaw = math.deg(math.atan2(dx, dy)) + HELI_YAW_OFF
+    _heliPath.yaw = yaw
     local ok, err = pcall(function() v:setAngles(0, yaw, 0) end)
     if ok then
         print(string.format("[PongDu] fire_support/heli: yaw set %.1f deg", yaw))
@@ -549,25 +549,35 @@ end
 -- 엔진 시동 여부와 무관하게 무조건 돌린다. 첫 틱엔 Init이 켜둔 랜덤 블레이드가
 -- 남지 않게 전체를 한 번 숨긴다.
 --
--- 여기서 함께 polyDirty도 세운다: BaseVehicle.polyDirty가 서야
--- initShadowPoly()가 그림자 좌표(shadowCoord)를 재계산하는데, 이 플래그는
--- setAngles()(각도 변화 시)에만 자동으로 서고 위치 갱신(setWorldTransform도,
--- 인터폴레이션의 setX/setY도)은 건드리지 않는다. 우리는 기수 방향을 경로
--- 시작 시 1번만 돌리므로(_heliPath.yawSet) 그 이후엔 아무도 이 플래그를
--- 세우지 않아 그림자가 스폰 위치에 고정된 채 헬기 본체만 날아가는 버그가
--- 있었다. 블레이드 회전은 파일럿/관전 구분 없이 전 클라에서 매 틱 도는
--- 유일한 함수라 여기 얹어서 전원의 화면에서 그림자가 실좌표를 따라가게
--- 한다. (BaseVehicle.polyDirty는 public 필드, BaseVehicle이 setExposed된
--- 클래스라 Lua에서 직접 대입 가능 -- 혹시 몰라 pcall로 감싼다.)
+-- 여기서 함께 그림자 좌표 갱신도 강제한다: BaseVehicle.polyDirty가 서야
+-- initShadowPoly()가 shadowCoord를 재계산하는데, 이 플래그는 setAngles()
+-- (실제 각도가 바뀔 때)에만 자동으로 서고 위치 갱신(setWorldTransform,
+-- 인터폴레이션의 setX/setY)은 건드리지 않는다. 처음엔 "public 필드니까
+-- v.polyDirty = true로 직접 대입하면 되겠지" 하고 시도했는데, Kahlua는 이
+-- 문법을 테이블에만 허용해서 "attempted index of non-table"이라는 순수
+-- 자바 RuntimeException을 던진다 -- Lua pcall이 못 잡는 종류라(Kahlua pcall은
+-- LuaRuntimeException만 잡음) 사격할 때마다 최상위까지 뚫고 올라가 콘솔에
+-- 크래시 로그가 찍혔다. 필드 직접 대입은 이 엔진에서 아예 불가능하다.
+--
+-- 대신 이미 검증된 유일한 트리거인 setAngles()를 매 틱 호출한다. 진짜로
+-- 각도가 "변해야" 플래그가 서므로(정수 절삭 비교), 기수 방향(yaw)을 매 틱
+-- ±0.6도씩 흔들어 절삭값이 확실히 달라지게 만든다. 빠르게 나는 헬기 + 회전
+-- 중인 로터 애니메이션에 묻혀 육안으로는 거의 안 보이는 수준의 흔들림이다.
+local _yawWobbleUp = false
+local function heliShadowRefreshTick(v)
+    if not _heliPath or not _heliPath.yaw then return end
+    _yawWobbleUp = not _yawWobbleUp
+    local yaw = _heliPath.yaw + (_yawWobbleUp and 0.6 or -0.6)
+    pcall(function() v:setAngles(0, yaw, 0) end)
+end
+
+-- 블레이드 회전: 전 클라 공통, 매 틱 모델 순환 스왑 (BH rotateBlades 로직).
+-- 엔진 시동 여부와 무관하게 무조건 돌린다. 첫 틱엔 Init이 켜둔 랜덤 블레이드가
+-- 남지 않게 전체를 한 번 숨긴다.
 local function heliBladeTick()
     local v = findHeliVehicle()
     if not v then return end
-    local okD, errD = pcall(function() v.polyDirty = true end)
-    if not okD and not _polyDirtyWarned then
-        _polyDirtyWarned = true
-        print("[PongDu] fire_support/heli: polyDirty set FAILED err=" .. tostring(errD)
-            .. " (shadow may not track position)")
-    end
+    heliShadowRefreshTick(v)
     local part = v:getPartById("heliblade")
     local ps   = v:getPartById("helibladeSmall")
     if not _bladeInit then
@@ -736,7 +746,17 @@ end
 --   kill=true  -> 좀비 정조준(실명중). 소유 클라가 킬 수행.
 --   kill 없음  -> 좀비 근처 ±2타일 산탄 오프셋으로 빗나가는 탄만 그린다.
 --   id 없음    -> 반경 내 좀비가 없어 지면 난사(서버가 랜덤 지점 좌표를 보냄).
-local HELI_ALT     = 260     -- 헬기 원점 고도(px). 저격수(95)보다 훨씬 높게.
+-- 헬기 원점 고도(px). 예광탄은 실제 3D 렌더와 무관한 수제 스크린좌표 연출이라
+-- HELI_FLY_ALT(물리 y, 실제 모델이 뜨는 높이)와 원래 아예 안 이어져 있었다 --
+-- 그래서 고도를 3.0->8.0으로 올렸을 때 헬기 본체는 위로 올라갔는데 예광탄은
+-- 옛 낮은 고도 기준(260px)에 그대로 남아 "헬기 한참 아래에서 발사" 버그가 났다.
+-- 정확한 물리y->스크린px 변환식은 엔진 렌더러 내부값이라 알 수 없어서, 처음
+-- 튜닝됐던 3.0px<->260px 비율(≈86.7px/unit)을 그대로 다음 고도에도 적용해
+-- 최소한 "같이 움직이게"는 만든다. 고도를 또 바꾸면 HELI_FLY_ALT만 고치면
+-- 이 값이 자동으로 따라간다 -- 다만 비율 자체가 근사치라 눈으로 보고
+-- HELI_ALT_PX_PER_UNIT을 미세조정할 것.
+local HELI_ALT_PX_PER_UNIT = 86.7
+local HELI_ALT     = HELI_FLY_ALT * HELI_ALT_PX_PER_UNIT
 local HELI_SCATTER = 2.0     -- 미스탄 산탄 반경(타일)
 
 local function handleHeliFire(args)

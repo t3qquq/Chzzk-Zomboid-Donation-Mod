@@ -361,10 +361,10 @@ DOServer["PongDuFireSupport"]["Sniper"] = function(player, data)
     local sender = data["sender"] or ""
 
     -- 저격수 위치는 발동 시점 1회만 고정("한 곳에 자리잡은 저격수").
-    -- r+25 타일 거리면 통상 줌에서 화면 밖이다.
+    -- r+50 타일 거리면 통상 줌에서 화면 밖이다. 
     local cx, cy = player:getX(), player:getY()
     local ang    = ZombRand(628) / 100.0
-    local odist  = r + 25
+    local odist  = r + 00
     local ox     = cx + math.cos(ang) * odist
     local oy     = cy + math.sin(ang) * odist
     local oz     = player:getZ()
@@ -563,7 +563,7 @@ DOServer["PongDuFireSupport"]["Heli"] = function(player, data)
     local iv  = tonumber(data["iv"]) or 200
     local kc  = tonumber(data["kc"]) or 5
     local sender = data["sender"] or ""
-    local D = r + 25
+    local D = r + 50
 
     -- 중첩: 기존 job이 있으면 현재 위치 A'에서 새 랜덤 B'로 즉시 급선회.
     for i = 1, #_heliJobs do
