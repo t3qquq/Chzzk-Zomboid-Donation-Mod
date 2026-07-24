@@ -139,12 +139,17 @@ module Base
 			engineStart = PongDuHeliSilence,
 		}
 
-		extents = 17.2000 16.0000 75.4667,
+		/* 캐릭터 충돌 차단용 미니 박스. 이동 차단 폴리곤(PolygonalMap2.
+		   VehiclePoly.init)은 extents 기반 2D 지면 폴리곤이라 비행 고도를
+		   무시한다 -- 원본 UH60 값(17x16x75)을 쓰면 하늘에 떠 있어도 바닥에
+		   거대한 투명 벽이 생긴다. Bullet 섀시(physicsChassisShape)도 같이
+		   축소. 렌더/그림자는 model scale / shadowExtents가 담당하므로 무관. */
+		extents = 0.3000 0.3000 0.3000,
 		mass = 500,
 		centerOfMassOffset = 0.0000 6.2000 -1.2667,
 		shadowExtents = 73.7545 120.9242,
 		shadowOffset = 0.0667 -0.0909,
-		physicsChassisShape = 17.3333 15.0667 74.4000,
+		physicsChassisShape = 0.3000 0.3000 0.3000,
 		engineForce = 15500,
 		maxSpeed = 70f,
 		engineLoudness = 0,
@@ -330,7 +335,10 @@ module Base
 		}
 
 		template = Battery,
-		template = Engine,
+		/* Engine 파트 없음(의도적): addToWorld -> trySpawnKey가
+		   getPartById("Engine") 존재를 게이트로 쓰므로, 파트를 빼면 스폰 시
+		   주변 바닥/컨테이너/좀비에 차키가 생성되는 경로가 원천 차단된다.
+		   바닐라 Base.Trailer가 엔진 없는 선례. 시동은 걸지 않으므로 무해. */
 		template = Muffler,
 
 		part Muffler

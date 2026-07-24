@@ -563,7 +563,7 @@ DOServer["PongDuFireSupport"]["Heli"] = function(player, data)
     local iv  = tonumber(data["iv"]) or 200
     local kc  = tonumber(data["kc"]) or 5
     local sender = data["sender"] or ""
-    local D = r + 40
+    local D = r + 25
 
     -- 중첩: 기존 job이 있으면 현재 위치 A'에서 새 랜덤 B'로 즉시 급선회.
     for i = 1, #_heliJobs do

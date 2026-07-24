@@ -444,7 +444,8 @@ end
 --  기존 pongdu_heli 루프(아래 사운드 섹션)를 그대로 쓴다.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local HELI_FLY_ALT = 3.0   -- 물리 y 고도. BH 조종 한계와 동일값(검증된 최대 렌더 고도).
+local HELI_FLY_ALT = 8.0   -- 물리 y 고도. iso 층수 환산 = y/2.46 (BaseVehicle.java:1456),
+                           -- 8.0 ≈ 3.25층. 초기값 3.0(BH 조종 상한)은 1.2층이라 너무 낮았다.
 local HELI_YAW_OFF = 0     -- fbx 전방축 보정(도). 기수 방향이 틀어져 보이면 여기로 교정.
 
 local _heliPath   = nil   -- { ax, ay, bx, by, oz, t0(로컬 시작 시각), total, yawSet }
@@ -452,6 +453,7 @@ local _heliVid    = nil   -- 서버가 준 VehicleID
 local _amPilot    = false -- 내가 물리 권한 클라인가 (HeliStart의 pilot == 내 onlineID)
 local _wFieldNum  = nil   -- tempTransform 자바 필드 인덱스 캐시 (클래스 고정이라 재사용)
 local _heliWarned = false -- "차량 미스트리밍" 로그 1회 제한
+local _polyDirtyWarned = false -- polyDirty 대입 실패 로그 1회 제한
 local _bladeInit  = false -- 첫 틱에 블레이드 전체 숨김 수행 여부
 local _bladeStep  = 0
 
@@ -546,9 +548,26 @@ end
 -- 블레이드 회전: 전 클라 공통, 매 틱 모델 순환 스왑 (BH rotateBlades 로직).
 -- 엔진 시동 여부와 무관하게 무조건 돌린다. 첫 틱엔 Init이 켜둔 랜덤 블레이드가
 -- 남지 않게 전체를 한 번 숨긴다.
+--
+-- 여기서 함께 polyDirty도 세운다: BaseVehicle.polyDirty가 서야
+-- initShadowPoly()가 그림자 좌표(shadowCoord)를 재계산하는데, 이 플래그는
+-- setAngles()(각도 변화 시)에만 자동으로 서고 위치 갱신(setWorldTransform도,
+-- 인터폴레이션의 setX/setY도)은 건드리지 않는다. 우리는 기수 방향을 경로
+-- 시작 시 1번만 돌리므로(_heliPath.yawSet) 그 이후엔 아무도 이 플래그를
+-- 세우지 않아 그림자가 스폰 위치에 고정된 채 헬기 본체만 날아가는 버그가
+-- 있었다. 블레이드 회전은 파일럿/관전 구분 없이 전 클라에서 매 틱 도는
+-- 유일한 함수라 여기 얹어서 전원의 화면에서 그림자가 실좌표를 따라가게
+-- 한다. (BaseVehicle.polyDirty는 public 필드, BaseVehicle이 setExposed된
+-- 클래스라 Lua에서 직접 대입 가능 -- 혹시 몰라 pcall로 감싼다.)
 local function heliBladeTick()
     local v = findHeliVehicle()
     if not v then return end
+    local okD, errD = pcall(function() v.polyDirty = true end)
+    if not okD and not _polyDirtyWarned then
+        _polyDirtyWarned = true
+        print("[PongDu] fire_support/heli: polyDirty set FAILED err=" .. tostring(errD)
+            .. " (shadow may not track position)")
+    end
     local part = v:getPartById("heliblade")
     local ps   = v:getPartById("helibladeSmall")
     if not _bladeInit then
