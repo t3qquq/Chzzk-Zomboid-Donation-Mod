@@ -101,8 +101,8 @@ end
 local function heliCfg()
     return svInt("Heli_Duration", 30),
            svInt("Heli_Radius", 30),
-           svInt("Heli_Interval", 200),
-           svInt("Heli_KillChance", 5)
+           svInt("Heli_Interval", 100),
+           svInt("Heli_KillChance", 10)
 end
 
 -- ── 종류별 실행부 (전부 미구현) ────────────────────────────────────────────
@@ -375,6 +375,47 @@ local _heliStopAt = nil      -- 자체 정지 데드라인 (ms)
 -- 아니라 로터음처럼 발동~종료 구간 내내 한 번만 틀어놓고 정지도 같이 관리한다.
 -- (PlaySound의 loop 인자는 무시되므로 스크립트 loop 플래그로만 루프가 성립 -- 위
 -- 로터음 주석 참고.)
+-- ── 거리 기반 볼륨 램프 ──────────────────────────────────────────────────────
+-- 루프 사운드라도 emitter:setVolume(handle, v)로 실시간 볼륨 조절이 가능하다
+-- (Sound.volume에 저장되고 FileSound.tick이 매 틱 volume * clip볼륨으로 반영 --
+--  VehicleDropCraftSound.lua가 이미 쓰는 검증된 경로).
+-- 헬기 위치는 서버가 HeliFire마다 ox,oy로 보내주므로, 매 발마다 플레이어와의
+-- 거리를 재서 볼륨을 갱신하면 "멀리서 접근 -> 최근접 -> 멀어짐" 연출이 된다.
+-- 경로 기하 자체가 그 커브다: 양 끝점(A/B)이 가장 멀고(odist*√2) 경로 중간
+-- 수선의 발이 가장 가깝다(odist).
+local HELI_VOL_NEAR     = 1.00   -- 최근접 시 로터음 볼륨
+local HELI_VOL_FAR      = 0.20   -- 최원거리 시 로터음 볼륨
+local HELI_LMG_VOL_NEAR = 0.85   -- 기관총음은 로터음보다 살짝 낮게
+local HELI_LMG_VOL_FAR  = 0.15
+
+local function heliUpdateVolume(hx, hy)
+    if not _heliSound and not _lmgSound then return end
+    local pl = getSpecificPlayer(0)
+    if not pl then return end
+
+    -- 경로 기하 기준 거리 범위: 최근접 = odist(r+25), 최원 = odist*1.414
+    local odist = svInt("Heli_Radius", 30) + 25
+    local dmin, dmax = odist, odist * 1.414
+    local dx, dy = hx - pl:getX(), hy - pl:getY()
+    local d = math.sqrt(dx * dx + dy * dy)
+
+    -- d를 [dmin,dmax] -> [1,0]으로 정규화 (가까울수록 1)
+    local k = 1 - (d - dmin) / (dmax - dmin)
+    if k < 0 then k = 0 elseif k > 1 then k = 1 end
+
+    local emitter = pl:getEmitter()
+    if _heliSound then
+        pcall(function()
+            emitter:setVolume(_heliSound, HELI_VOL_FAR + (HELI_VOL_NEAR - HELI_VOL_FAR) * k)
+        end)
+    end
+    if _lmgSound then
+        pcall(function()
+            emitter:setVolume(_lmgSound, HELI_LMG_VOL_FAR + (HELI_LMG_VOL_NEAR - HELI_LMG_VOL_FAR) * k)
+        end)
+    end
+end
+
 local function heliSoundStop(reason)
     local pl = getSpecificPlayer(0)
     if _heliSound then
@@ -399,6 +440,8 @@ local function heliSoundStart(remainMs)
         end)
         if ok and handle and handle ~= 0 then
             _heliSound = handle
+            -- 원거리(A지점) 볼륨으로 시작. 이후 HeliFire마다 거리 기반 갱신.
+            pcall(function() pl:getEmitter():setVolume(handle, HELI_VOL_FAR) end)
         else
             print("[PongDu] fire_support/heli: rotor sound start FAILED")
         end
@@ -409,6 +452,7 @@ local function heliSoundStart(remainMs)
         end)
         if ok and handle and handle ~= 0 then
             _lmgSound = handle
+            pcall(function() pl:getEmitter():setVolume(handle, HELI_LMG_VOL_FAR) end)
         else
             print("[PongDu] fire_support/heli: LMG loop start FAILED")
         end
@@ -442,6 +486,9 @@ local function handleHeliFire(args)
 
     local z = id and findZombieById(id) or nil
     if z then tx, ty, tz = z:getX(), z:getY(), z:getZ() end
+
+    -- 헬기 현재 위치 기준 로터음/기관총음 볼륨 갱신 (접근/이탈 연출)
+    heliUpdateVolume(ox, oy)
 
     if not kill then
         -- 난사 느낌: 미스탄은 목표에서 살짝 빗나가게
