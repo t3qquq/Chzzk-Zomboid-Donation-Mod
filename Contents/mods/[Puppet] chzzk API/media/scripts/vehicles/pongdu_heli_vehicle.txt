@@ -3,13 +3,14 @@ module Base
 	/* ═══════════════════════════════════════════════════════════════════
 	   화력 지원 / 헬기 실체 차량 (fire_support helicopter)
 
-	   BetterHelicopterForMP(워크샵)의 UH-1 모델/블레이드 에셋을 리네임해서
-	   사용한다. 모델 id / 차량명 / 메시 파일명 / 텍스처를 전부 PongDu
-	   네임스페이스로 바꿔 원본 BH 모드와 동시 설치돼도 충돌하지 않는다.
+	   UH 60 Helicopter Fast(워크샵)의 UH-60 모델/블레이드 에셋을 리네임해서
+	   사용한다 (초기 버전은 BetterHelicopterForMP의 UH-1이었음). 모델 id /
+	   차량명 / 메시 파일명 / 텍스처를 전부 PongDu 네임스페이스로 바꿔 원본
+	   모드와 동시 설치돼도 충돌하지 않는다. 스킨은 Vehicle_UH60Green을
+	   복사해 뒀다 -- 다른 도색을 원하면 원본 모드의 skin png로 교체.
 
 	   원본 대비 변경점:
-	   - 블레이드 texture: 원본은 존재하지 않는 Vehicle_UH1Interior2를
-	     참조했다(파일 미포함). 실존하는 본체 텍스처로 교체.
+	   - 블레이드 texture: 원본의 Vehicle_Blades를 전용 파일로 복사해 사용.
 	   - 엔진 사운드: 시동을 걸지 않으므로(무인 텔레포트 비행) 어떤 이름을
 	     넣어도 재생되지 않는다. 미정의 이름을 넣어 완전 무음 보장.
 	   - part의 lua create/init: BHblader.lua의 blade.* 대신 우리
@@ -19,85 +20,85 @@ module Base
 	model PongDuHeliBlade1
 	{
 		mesh = vehicles/pongdu_heli_blade1,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.05,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade2
 	{
 		mesh = vehicles/pongdu_heli_blade2,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.05,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade3
 	{
 		mesh = vehicles/pongdu_heli_blade3,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.05,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade4
 	{
 		mesh = vehicles/pongdu_heli_blade4,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.05,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade5
 	{
 		mesh = vehicles/pongdu_heli_blade5,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.05,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade6
 	{
 		mesh = vehicles/pongdu_heli_blade6,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.05,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade7
 	{
 		mesh = vehicles/pongdu_heli_blade7,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.05,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade8
 	{
 		mesh = vehicles/pongdu_heli_blade8,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.05,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade1S
 	{
 		mesh = vehicles/pongdu_heli_blade1s,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.045,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade2S
 	{
 		mesh = vehicles/pongdu_heli_blade2s,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.045,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade3S
 	{
 		mesh = vehicles/pongdu_heli_blade3s,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.045,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBlade4S
 	{
 		mesh = vehicles/pongdu_heli_blade4s,
-		texture = Vehicles/Vehicle_PongDuHeli,
-		scale = 0.01,
+		texture = Vehicles/Vehicle_PongDuHeliBlades,
+		scale = 0.045,
 		shader = vehiclewheel,
 	}
 	model PongDuHeliBody
@@ -105,7 +106,7 @@ module Base
 		mesh = vehicles/pongdu_heli_body,
 		shader = vehicle,
 		static = TRUE,
-		scale = 0.01,
+		scale = 0.05,
 	}
 
 	vehicle PongDuHeli
@@ -118,8 +119,8 @@ module Base
 		model
 		{
 			file = PongDuHeliBody,
-			scale = 0.2200,
-			offset = 0.0000 -4.5455 0.0000,
+			scale = 0.1500,
+			offset = 0.0000 3.5333 7.8667,
 		}
 
 		skin
@@ -138,12 +139,12 @@ module Base
 			engineStart = PongDuHeliSilence,
 		}
 
-		extents = 8.9091 11.0000 27.0909,
+		extents = 17.2000 16.0000 75.4667,
 		mass = 500,
-		centerOfMassOffset = 0.0455 0.9545 0.0000,
-		shadowExtents = 8.9545 39.0454,
-		shadowOffset = 0.0000 -6.0909,
-		physicsChassisShape = 9.0909 10.7273 26.9091,
+		centerOfMassOffset = 0.0000 6.2000 -1.2667,
+		shadowExtents = 73.7545 120.9242,
+		shadowOffset = 0.0667 -0.0909,
+		physicsChassisShape = 17.3333 15.0667 74.4000,
 		engineForce = 15500,
 		maxSpeed = 70f,
 		engineLoudness = 0,

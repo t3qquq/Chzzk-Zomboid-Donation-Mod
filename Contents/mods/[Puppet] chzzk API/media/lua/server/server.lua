@@ -473,6 +473,11 @@ Events.OnTick.Add(processSniperJobs)
 -- 상태와 좀비 락온(job.target)은 급선회와 무관하므로 그대로 유지한다.
 local _heliJobs = {}
 
+-- 미탐지 히스테리시스 임계값: 연속 몇 회 스캔이 비어야 CLEAR로 전환할지.
+-- iv(기본 100ms) 기준 3회 = 약 300ms. 너무 크면 clear 반응이 굼떠 보이고,
+-- 1이면(=즉시) 반경 경계 진동으로 LMG 루프가 재시작되며 끊겨 들린다.
+local HELI_MISS_THRESHOLD = 3
+
 -- 헬기 실차량(Base.PongDuHeli) 스폰. A 지점 청크가 서버에 로드 안 돼 있으면
 -- 플레이어 쪽으로 10%씩 당기며 로드된 스퀘어를 찾는다. 스폰 후 대상 플레이어
 -- 클라에 LocalCollide 물리 권한을 강제 부여(authorizationServerCollide) --
@@ -511,9 +516,13 @@ local function heliSpawnVehicle(job)
     pcall(function() v:setZombiesDontAttack(true) end)
     job.vehicle = v
     job.vid     = v:getId()
+    -- 권한 부여: authorizationServerCollide(short,boolean)는 Kahlua가 primitive
+    -- short 인자를 변환 못해 RuntimeException이 난다(컨버터가 boxed Short만 등록).
+    -- authorizationChanged(IsoGameCharacter)로 대체 -- 견인 로직이 쓰는 검증
+    -- 경로이며 Local 권한이라 1초 무변동 자동회수(LocalCollide 전용) 대상도 아니다.
     local okA, errA = pcall(function()
         job.pilot = job.player:getOnlineID()
-        v:authorizationServerCollide(job.pilot, true)
+        v:authorizationChanged(job.player)
     end)
     if not okA then
         print("[PongDu][Heli] authorization grant FAILED err=" .. tostring(errA))
@@ -554,7 +563,7 @@ DOServer["PongDuFireSupport"]["Heli"] = function(player, data)
     local iv  = tonumber(data["iv"]) or 200
     local kc  = tonumber(data["kc"]) or 5
     local sender = data["sender"] or ""
-    local D = r + 25
+    local D = r + 40
 
     -- 중첩: 기존 job이 있으면 현재 위치 A'에서 새 랜덤 B'로 즉시 급선회.
     for i = 1, #_heliJobs do
@@ -578,6 +587,7 @@ DOServer["PongDuFireSupport"]["Heli"] = function(player, data)
             local nbx, nby = pcx + math.cos(newAng) * D, pcy + math.sin(newAng) * D
 
             job.r, job.iv, job.kc, job.sender = r, iv, kc, sender
+            job.missStreak = 0
             job.ax, job.ay = curX, curY
             job.bx, job.by = nbx, nby
             job.oz         = player:getZ()
@@ -590,7 +600,7 @@ DOServer["PongDuFireSupport"]["Heli"] = function(player, data)
                 heliSpawnVehicle(job)
             elseif job.pilot then
                 pcall(function()
-                    job.vehicle:authorizationServerCollide(job.pilot, true)
+                    job.vehicle:authorizationChanged(job.player)
                 end)
             end
 
@@ -622,6 +632,7 @@ DOServer["PongDuFireSupport"]["Heli"] = function(player, data)
         player = player, r = r, iv = iv, kc = kc, sender = sender,
         ax = ax, ay = ay, bx = bx, by = by, oz = player:getZ(),
         startAt = now, endAt = now + dur, nextAt = now,
+        missStreak = 0,
     }
     _heliJobs[#_heliJobs + 1] = job
 
@@ -673,7 +684,7 @@ local function processHeliJobs()
             table.remove(_heliJobs, i)
             local players = getOnlinePlayers()
             for k = 0, players:size() - 1 do
-                sendServerCommand(players:get(k), "PongDuFireSupport", "HeliStop", {})
+                sendServerCommand(players:get(k), "PongDuFireSupport", "HeliStop", { t = 1 })
             end
             print("[PongDu][Heli] job finished")
         elseif now >= job.nextAt then
@@ -711,18 +722,30 @@ local function processHeliJobs()
                 end
             end
 
+            -- 미탐지 히스테리시스: 반경 경계에서 좀비가 순간적으로 들락날락하면
+            -- 매 스캔 CLEAR<->ENGAGE가 반복돼 LMG 루프가 재시작될 때마다
+            -- 끊겨 들린다("씹힘"). 연속 3회(iv 100ms 기준 약 300ms) 미탐지가
+            -- 확인돼야만 진짜로 소진된 것으로 보고 clear 전환한다.
+            if target then
+                job.missStreak = 0
+            else
+                job.missStreak = (job.missStreak or 0) + 1
+            end
+
             -- ── engage/clear 상태머신 ──
             -- 대상 있음: engage 상태로 사격. 없음: 사격 자체를 중단(HeliFire
             -- 미전송 -- 구버전의 "랜덤 지면 난사" 제거). 상태가 바뀌는 순간에만
             -- HeliEngage/HeliClear를 브로드캐스트해서 클라가 기관총 루프음을
-            -- 켜고 끄게 한다. clear 전환은 "교전하다가 대상이 사라진" 경우에만
-            -- 발생한다(한 번도 교전 안 했으면 area clear 방송이 어색하므로).
+            -- 켜고 끄게 한다.
+            -- job.engaged 3상태: nil(초기 스캔 전) / true(교전 중) / false(clear
+            -- 방송 완료). 교전하다 대상이 소진되면 즉시 clear, 시작부터 반경이
+            -- 비어 있으면 도착 연출을 위해 3초 유예 후 "구역 이상무" 1회 방송.
             if target then
-                if not job.engaged then
+                if job.engaged ~= true then
                     job.engaged = true
                     local players = getOnlinePlayers()
                     for k = 0, players:size() - 1 do
-                        sendServerCommand(players:get(k), "PongDuFireSupport", "HeliEngage", {})
+                        sendServerCommand(players:get(k), "PongDuFireSupport", "HeliEngage", { t = 1 })
                     end
                     print("[PongDu][Heli] ENGAGE")
                 end
@@ -734,13 +757,21 @@ local function processHeliJobs()
                     print("[PongDu][Heli] shot KILL zid=" .. payload.id)
                 end
             else
-                if job.engaged then
+                if job.engaged == true and job.missStreak >= HELI_MISS_THRESHOLD then
                     job.engaged = false
                     local players = getOnlinePlayers()
                     for k = 0, players:size() - 1 do
-                        sendServerCommand(players:get(k), "PongDuFireSupport", "HeliClear", {})
+                        sendServerCommand(players:get(k), "PongDuFireSupport", "HeliClear", { t = 1 })
                     end
-                    print("[PongDu][Heli] CLEAR (no targets in radius)")
+                    print("[PongDu][Heli] CLEAR (targets depleted)")
+                elseif job.engaged == nil and now - job.startAt >= 3000
+                    and job.missStreak >= HELI_MISS_THRESHOLD then
+                    job.engaged = false
+                    local players = getOnlinePlayers()
+                    for k = 0, players:size() - 1 do
+                        sendServerCommand(players:get(k), "PongDuFireSupport", "HeliClear", { t = 1 })
+                    end
+                    print("[PongDu][Heli] CLEAR (initial sweep, no targets)")
                 end
                 -- 사격 없음: 다음 스캔 예약만 하고 이번 발은 건너뛴다
                 job.nextAt = now + job.iv

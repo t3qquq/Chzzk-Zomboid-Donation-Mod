@@ -773,7 +773,10 @@ end
 -- 여기서는 큐잉 없이 수신 즉시 그 한 발을 처리한다.
 Events.OnServerCommand.Add(function(module, command, args)
     if module ~= "PongDuFireSupport" then return end
-    if not args then return end
+    -- HeliEngage/HeliClear/HeliStop처럼 빈 테이블로 보낸 명령은 수신 측에서
+    -- args가 nil로 역직렬화된다. 여기서 return하면 그 명령들이 통째로
+    -- 버려지므로(LMG/area_clear 미재생의 원인이었다) 빈 테이블로 정규화한다.
+    args = args or {}
 
     if command == "HeliStart" then
         if args.ax then
